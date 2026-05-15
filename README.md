@@ -21,22 +21,21 @@ Real-time MongoDB to ClickHouse replication with transparent analytics query rou
 
 ## Benchmark Results
 
-### Read Performance (1M records, 5 iterations)
+### Read Performance — MongoDB vs Standalone CH vs Distributed CH (500K records, 5 iterations)
 
-| Query | MongoDB (ms) | ClickHouse (ms) | Speedup |
-|:------|:-------------|:----------------|:--------|
-| [Count by status (GROUP BY)](benchmark/results.json#L24) | 506.5 | 10.9 | 46.7x |
-| [Avg amount by region](benchmark/results.json#L33) | 558.8 | 9.4 | 59.2x |
-| [Top 10 customers by spend](benchmark/results.json#L42) | 855.5 | 40.8 | 21.0x |
-| [Multi-filter compound](benchmark/results.json#L51) | 109.0 | 11.4 | 9.6x |
-| [Date range scan (3 months)](benchmark/results.json#L60) | 973.5 | 16.8 | 58.1x |
-| [2-dim GROUP BY (events)](benchmark/results.json#L69) | 628.8 | 14.0 | 45.1x |
-| [Avg duration by event type](benchmark/results.json#L78) | 685.5 | 9.0 | 76.5x |
-| [Top 20 users by event count](benchmark/results.json#L87) | 727.4 | 33.4 | 21.8x |
-| [Full table count](benchmark/results.json#L96) | 262.3 | 3.1 | 84.1x |
-| [Percentile + multi-agg](benchmark/results.json#L105) | 659.4 | 11.9 | 55.4x |
+| Query | MongoDB (ms) | Standalone CH (ms) | Distributed CH 3-shard (ms) | S speedup | D speedup |
+|:------|:-------------|:-------------------|:----------------------------|:----------|:----------|
+| [Count by status (GROUP BY)](benchmark/distributed_results.json#L5) | 822.8 | 16.5 | 61.1 | 50.0x | 13.5x |
+| [Avg amount by region](benchmark/distributed_results.json#L10) | 886.1 | 21.5 | 44.4 | 41.2x | 20.0x |
+| [Top 10 customers by spend](benchmark/distributed_results.json#L15) | 1,096.8 | 88.6 | 177.6 | 12.4x | 6.2x |
+| [Single-region filter (shard-local)](benchmark/distributed_results.json#L20) | 205.0 | 40.6 | 66.6 | 5.0x | 3.1x |
+| [Single-region aggregation (shard-local)](benchmark/distributed_results.json#L25) | 313.2 | 30.6 | 56.1 | 10.2x | 5.6x |
+| [Date range scan (all shards, parallel)](benchmark/distributed_results.json#L30) | 1,492.2 | 77.6 | 63.1 | 19.2x | 23.7x |
+| [Full table count](benchmark/distributed_results.json#L35) | 447.7 | 11.8 | 36.5 | 37.8x | 12.3x |
+| [Percentile + multi-agg](benchmark/distributed_results.json#L40) | 1,206.1 | 22.6 | 57.8 | 53.3x | 20.9x |
+| [Heavy aggregation (uniqExact)](benchmark/distributed_results.json#L45) | 1,336.5 | 140.5 | 250.9 | 9.5x | 5.3x |
 
-**Average read speedup: 39.9x** at 1M records. Scales superlinearly — 12x at 200K, 40x at 1M.
+**Standalone avg: 26.5x** | **Distributed avg: 12.3x** | Distributed wins on large parallel scans (date range: 23.7x vs 19.2x). Standalone wins when data fits in single-node RAM. Distributed shines at 10M+ rows/shard.
 
 ### Write Overhead (200K records)
 
@@ -48,7 +47,7 @@ Real-time MongoDB to ClickHouse replication with transparent analytics query rou
 
 **Zero write overhead.** mg-clickhouse tails the oplog asynchronously — MongoDB acknowledges writes before the sync layer sees them.
 
-Full results: [`benchmark/results.json`](benchmark/results.json), [`benchmark/write_results.json`](benchmark/write_results.json)
+Full results: [`benchmark/results.json`](benchmark/results.json), [`benchmark/write_results.json`](benchmark/write_results.json), [`benchmark/distributed_results.json`](benchmark/distributed_results.json)
 
 ## How It Works
 
