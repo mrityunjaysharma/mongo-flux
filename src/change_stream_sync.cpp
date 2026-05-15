@@ -1,5 +1,6 @@
 #include "mg_clickhouse/change_stream_sync.h"
 #include "mg_clickhouse/clickhouse_client.h"
+#include "mg_clickhouse/bson_utils.h"
 
 #include <chrono>
 #include <fstream>
@@ -125,42 +126,8 @@ void ChangeStreamSync::sync_collection(const std::string& collection) {
 
                 if (full_doc.empty()) continue;
 
-                // Extract mapped fields
-                nlohmann::json row;
-                for (const auto& field_map : mapping.fields) {
-                    auto elem = full_doc[field_map.mongo_field];
-                    if (elem) {
-                        switch (elem.type()) {
-                            case bsoncxx::type::k_int32:
-                                row[field_map.ch_column] = elem.get_int32().value;
-                                break;
-                            case bsoncxx::type::k_int64:
-                                row[field_map.ch_column] = elem.get_int64().value;
-                                break;
-                            case bsoncxx::type::k_double:
-                                row[field_map.ch_column] = elem.get_double().value;
-                                break;
-                            case bsoncxx::type::k_string:
-                                row[field_map.ch_column] = std::string(elem.get_string().value);
-                                break;
-                            case bsoncxx::type::k_bool:
-                                row[field_map.ch_column] = elem.get_bool().value;
-                                break;
-                            case bsoncxx::type::k_oid:
-                                row[field_map.ch_column] = elem.get_oid().value.to_string();
-                                break;
-                            case bsoncxx::type::k_date:
-                                row[field_map.ch_column] = elem.get_date().to_int64();
-                                break;
-                            default:
-                                row[field_map.ch_column] = nullptr;
-                                break;
-                        }
-                    } else {
-                        row[field_map.ch_column] = nullptr;
-                    }
-                }
-                batch.push_back(std::move(row));
+                // Extract mapped fields using shared utility
+                batch.push_back(extract_mapped_fields(full_doc, mapping));
             }
 
             // Save resume token
@@ -203,42 +170,13 @@ void ChangeStreamSync::flush_batch(
 
     try {
         std::vector<std::string> columns;
-        for (const auto& field : mapping.fields) {
-            columns.push_back(field.ch_column);
-        }
-
         std::vector<std::vector<std::string>> rows;
-        rows.reserve(batch.size());
-
-        for (const auto& row : batch) {
-            std::vector<std::string> values;
-            for (const auto& field : mapping.fields) {
-                auto it = row.find(field.ch_column);
-                if (it == row.end() || it->is_null()) {
-                    values.push_back("NULL");
-                } else if (it->is_string()) {
-                    // Escape single quotes
-                    std::string val = it->get<std::string>();
-                    std::string escaped = "'";
-                    for (char c : val) {
-                        if (c == '\'') escaped += "\\'";
-                        else if (c == '\\') escaped += "\\\\";
-                        else escaped += c;
-                    }
-                    escaped += "'";
-                    values.push_back(escaped);
-                } else {
-                    values.push_back(it->dump());
-                }
-            }
-            rows.push_back(std::move(values));
-        }
+        prepare_batch_for_insert(batch, mapping, columns, rows);
 
         ch_client_->insert_batch(mapping.clickhouse_database, mapping.clickhouse_table, columns, rows);
     } catch (const std::exception& e) {
-        std::cerr << "[mg-clickhouse] Failed to flush batch for " << collection
-                  << ": " << e.what() << std::endl;
-        // In production: dead-letter queue or retry logic
+        std::cerr << "[mg-clickhouse/cs] Failed to flush batch for " << collection
+                  << " (" << batch.size() << " rows): " << e.what() << std::endl;
     }
 
     batch.clear();

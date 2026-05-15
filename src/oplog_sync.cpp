@@ -1,5 +1,6 @@
 #include "mg_clickhouse/oplog_sync.h"
 #include "mg_clickhouse/clickhouse_client.h"
+#include "mg_clickhouse/bson_utils.h"
 
 #include <chrono>
 #include <fstream>
@@ -170,35 +171,8 @@ void OplogSync::tail_oplog_inner() {
 
             try {
                 std::vector<std::string> columns;
-                for (const auto& field : mapping.fields) {
-                    columns.push_back(field.ch_column);
-                }
-
                 std::vector<std::vector<std::string>> ch_rows;
-                ch_rows.reserve(batch.rows.size());
-
-                for (const auto& row : batch.rows) {
-                    std::vector<std::string> values;
-                    for (const auto& field : mapping.fields) {
-                        auto it = row.find(field.ch_column);
-                        if (it == row.end() || it->is_null()) {
-                            values.push_back("NULL");
-                        } else if (it->is_string()) {
-                            std::string val = it->get<std::string>();
-                            std::string escaped = "'";
-                            for (char c : val) {
-                                if (c == '\'') escaped += "\\'";
-                                else if (c == '\\') escaped += "\\\\";
-                                else escaped += c;
-                            }
-                            escaped += "'";
-                            values.push_back(escaped);
-                        } else {
-                            values.push_back(it->dump());
-                        }
-                    }
-                    ch_rows.push_back(std::move(values));
-                }
+                prepare_batch_for_insert(batch.rows, mapping, columns, ch_rows);
 
                 ch_client_->insert_batch(
                     mapping.clickhouse_database,
@@ -214,7 +188,6 @@ void OplogSync::tail_oplog_inner() {
                           << collection << " (" << batch.rows.size() << " rows): "
                           << e.what() << std::endl;
                 all_flushed = false;
-                // Keep rows in batch for retry on next flush cycle
             }
         }
 
@@ -265,42 +238,7 @@ void OplogSync::tail_oplog_inner() {
             if (!o_elem || o_elem.type() != bsoncxx::type::k_document) continue;
             auto doc = o_elem.get_document().value;
 
-            nlohmann::json row;
-            for (const auto& field_map : mapping.fields) {
-                auto elem = doc[field_map.mongo_field];
-                if (elem) {
-                    switch (elem.type()) {
-                        case bsoncxx::type::k_int32:
-                            row[field_map.ch_column] = elem.get_int32().value;
-                            break;
-                        case bsoncxx::type::k_int64:
-                            row[field_map.ch_column] = elem.get_int64().value;
-                            break;
-                        case bsoncxx::type::k_double:
-                            row[field_map.ch_column] = elem.get_double().value;
-                            break;
-                        case bsoncxx::type::k_string:
-                            row[field_map.ch_column] = std::string(elem.get_string().value);
-                            break;
-                        case bsoncxx::type::k_bool:
-                            row[field_map.ch_column] = elem.get_bool().value;
-                            break;
-                        case bsoncxx::type::k_oid:
-                            row[field_map.ch_column] = elem.get_oid().value.to_string();
-                            break;
-                        case bsoncxx::type::k_date:
-                            row[field_map.ch_column] = elem.get_date().to_int64();
-                            break;
-                        default:
-                            row[field_map.ch_column] = nullptr;
-                            break;
-                    }
-                } else {
-                    row[field_map.ch_column] = nullptr;
-                }
-            }
-
-            pending[collection].rows.push_back(std::move(row));
+            pending[collection].rows.push_back(extract_mapped_fields(doc, mapping));
 
         } else if (op == "u") {
             // UPDATE — for ReplacingMergeTree, we insert the new version.
@@ -323,41 +261,7 @@ void OplogSync::tail_oplog_inner() {
             }
 
             if (is_replacement) {
-                nlohmann::json row;
-                for (const auto& field_map : mapping.fields) {
-                    auto elem = update_doc[field_map.mongo_field];
-                    if (elem) {
-                        switch (elem.type()) {
-                            case bsoncxx::type::k_int32:
-                                row[field_map.ch_column] = elem.get_int32().value;
-                                break;
-                            case bsoncxx::type::k_int64:
-                                row[field_map.ch_column] = elem.get_int64().value;
-                                break;
-                            case bsoncxx::type::k_double:
-                                row[field_map.ch_column] = elem.get_double().value;
-                                break;
-                            case bsoncxx::type::k_string:
-                                row[field_map.ch_column] = std::string(elem.get_string().value);
-                                break;
-                            case bsoncxx::type::k_bool:
-                                row[field_map.ch_column] = elem.get_bool().value;
-                                break;
-                            case bsoncxx::type::k_oid:
-                                row[field_map.ch_column] = elem.get_oid().value.to_string();
-                                break;
-                            case bsoncxx::type::k_date:
-                                row[field_map.ch_column] = elem.get_date().to_int64();
-                                break;
-                            default:
-                                row[field_map.ch_column] = nullptr;
-                                break;
-                        }
-                    } else {
-                        row[field_map.ch_column] = nullptr;
-                    }
-                }
-                pending[collection].rows.push_back(std::move(row));
+                pending[collection].rows.push_back(extract_mapped_fields(update_doc, mapping));
             }
             // Partial updates: skip (ReplacingMergeTree handles via periodic full-sync)
         }
