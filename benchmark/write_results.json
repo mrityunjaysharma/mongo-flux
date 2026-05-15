@@ -1,0 +1,57 @@
+{
+  "timestamp": "2026-05-15T17:43:34.317762",
+  "config": {
+    "total_records": 200000,
+    "batch_size": 1000,
+    "single_inserts": 2000,
+    "mg_clickhouse_running": true
+  },
+  "batch_inserts": {
+    "standalone": {
+      "total_ms": 6983.5737090033945,
+      "total_records": 200000,
+      "batch_size": 1000,
+      "num_batches": 200,
+      "avg_batch_ms": 23.17393535937299,
+      "p50_batch_ms": 21.146143502846826,
+      "p95_batch_ms": 47.10863898799289,
+      "min_batch_ms": 7.601288991281763,
+      "max_batch_ms": 57.326819995068945,
+      "throughput_docs_per_sec": 28638.632358409148
+    },
+    "with_mg_clickhouse": {
+      "total_ms": 6277.794231005828,
+      "total_records": 200000,
+      "batch_size": 1000,
+      "num_batches": 200,
+      "avg_batch_ms": 21.351886824486428,
+      "p50_batch_ms": 19.535816500138026,
+      "p95_batch_ms": 40.440348006086424,
+      "min_batch_ms": 7.110559003194794,
+      "max_batch_ms": 80.93040600942913,
+      "throughput_docs_per_sec": 31858.323583179314
+    }
+  },
+  "single_inserts": {
+    "standalone": {
+      "num_inserts": 2000,
+      "avg_ms": 2.6682752771957894,
+      "p50_ms": 2.5029009993886575,
+      "p95_ms": 4.815702006453648,
+      "p99_ms": 8.254237996879965,
+      "min_ms": 0.7260750135174021,
+      "max_ms": 21.960463011055253,
+      "throughput_docs_per_sec": 374.7739255190136
+    },
+    "with_mg_clickhouse": {
+      "num_inserts": 2000,
+      "avg_ms": 2.598412527637265,
+      "p50_ms": 2.4271875008707866,
+      "p95_ms": 4.680078011006117,
+      "p99_ms": 8.077999009401537,
+      "min_ms": 0.7233509968500584,
+      "max_ms": 23.939695995068178,
+      "throughput_docs_per_sec": 384.85036127396575
+    }
+  }
+}
