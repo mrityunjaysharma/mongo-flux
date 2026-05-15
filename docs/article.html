@@ -91,17 +91,21 @@
 
 <p>MongoDB replica sets work by having secondary nodes tail the primary's oplog — a capped collection recording every write. mg-clickhouse does exactly the same thing, but applies operations to ClickHouse instead of a local storage engine.</p>
 
+<p>The default deployment runs a 3-node MongoDB replica set: 1 primary and 2 secondaries. mg-clickhouse connects using the full replica set URI and automatically follows primary elections during failover.</p>
+
 <div class="mermaid">
 flowchart TD
-    APP[Your Application] -->|writes + OLTP reads| MG[(MongoDB)]
-    MG -->|"oplog (async)"| MGC[mg-clickhouse]
+    APP[Your Application] -->|writes + OLTP reads| MGP[(MongoDB Primary)]
+    MGP -->|replication| MGS1[(Secondary 1)]
+    MGP -->|replication| MGS2[(Secondary 2)]
+    MGP -->|"oplog (async)"| MGC[mg-clickhouse]
     MGC -->|batch INSERT| CH[(ClickHouse)]
     APP -->|"analytics reads (?clickhouse=true)"| MGC
     MGC -->|SQL| CH
 </div>
 
 <div class="highlight">
-    <strong>Key insight:</strong> Writes go to MongoDB unchanged (zero overhead). Analytical reads are transparently routed to ClickHouse by adding <code>?clickhouse=true</code> to your connection URI. No application code changes.
+    <strong>Key insight:</strong> Writes go to the MongoDB primary unchanged (zero overhead). The two secondaries provide high availability. Analytical reads are transparently routed to ClickHouse by adding <code>?clickhouse=true</code> to your connection URI. No application code changes.
 </div>
 
 <hr class="separator">
@@ -110,23 +114,29 @@ flowchart TD
 
 <h3>1. Real-Time Replication</h3>
 
+<p>mg-clickhouse tails the oplog from the MongoDB primary. The two secondaries handle read scaling and failover independently.</p>
+
 <div class="mermaid">
 sequenceDiagram
     participant App
-    participant MongoDB
-    participant mg-clickhouse
-    participant ClickHouse
+    participant Primary as MongoDB Primary
+    participant S1 as Secondary 1
+    participant S2 as Secondary 2
+    participant mgch as mg-clickhouse
+    participant CH as ClickHouse
 
-    App->>MongoDB: insertOne({amount: 99.99})
-    MongoDB-->>App: acknowledged ✓
+    App->>Primary: insertOne({amount: 99.99})
+    Primary-->>App: acknowledged ✓
+    Primary->>S1: replication (async)
+    Primary->>S2: replication (async)
     Note over App: Write done. Zero overhead.
-    MongoDB->>mg-clickhouse: oplog entry (async)
-    mg-clickhouse->>mg-clickhouse: extract fields → batch
-    mg-clickhouse->>ClickHouse: INSERT batch
-    mg-clickhouse->>mg-clickhouse: save position
+    Primary->>mgch: oplog entry (async)
+    mgch->>mgch: extract fields → batch
+    mgch->>CH: INSERT batch
+    mgch->>mgch: save position
 </div>
 
-<p>The replication is fully async. MongoDB acknowledges writes before mg-clickhouse sees them. Benchmarks confirm zero measurable write overhead.</p>
+<p>The replication is fully async. The primary acknowledges writes before mg-clickhouse sees them. If the primary fails, the replica set elects a new primary and mg-clickhouse automatically reconnects. Benchmarks confirm zero measurable write overhead.</p>
 
 <h3>2. Query Translation (BSON → AST → SQL)</h3>
 
@@ -253,9 +263,11 @@ flowchart TD
 
 <pre><code>git clone https://github.com/your-org/mg-clickhouse
 cd mg-clickhouse
-docker compose up --build
+docker compose up --build</code></pre>
 
-# Create a mapping
+<p>This starts a 3-node MongoDB replica set (1 primary + 2 secondaries on ports 27017-27019), ClickHouse, and mg-clickhouse. The replica set initializes automatically via <code>rs.initiate()</code>.</p>
+
+<pre><code># Create a mapping
 curl -X POST http://localhost:9090/api/v1/mappings -H "Content-Type: application/json" -d '{
   "collection": "orders",
   "clickhouse_table": "orders",

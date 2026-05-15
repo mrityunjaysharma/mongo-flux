@@ -12,15 +12,19 @@ mg-clickhouse replicates MongoDB to ClickHouse in real-time using oplog tailing 
 
 ## 2. Architecture
 
+MongoDB runs as a 3-node replica set (1 primary + 2 secondaries). mg-clickhouse tails the oplog from the primary and automatically reconnects to the new primary after a failover election.
+
 ```mermaid
 flowchart TD
-    APP[Application] -->|writes| MG[(MongoDB)]
-    MG -->|oplog.rs| SYNC[Oplog / CS Sync]
+    APP[Application] -->|writes| MGP[(MongoDB Primary)]
+    MGP -->|replication| MGS1[(MongoDB Secondary 1)]
+    MGP -->|replication| MGS2[(MongoDB Secondary 2)]
+    MGP -->|oplog.rs| SYNC[Oplog / CS Sync]
     SYNC -->|batch INSERT| CH[(ClickHouse)]
     APP -->|"reads ?clickhouse=true"| ROUTER[Query Router]
     ROUTER -->|translate| XLAT[Query Translator<br/>BSON → AST → SQL]
     XLAT -->|SELECT| CH
-    ROUTER -->|standard reads| MG
+    ROUTER -->|standard reads| MGP
     SYNC -.->|lookup| REG[Schema Registry]
     XLAT -.->|lookup| REG
 ```
@@ -29,14 +33,25 @@ flowchart TD
 
 ### Writes (zero overhead)
 
+Writes target the MongoDB primary. The two secondaries replicate via the standard MongoDB replication protocol. mg-clickhouse tails the primary's oplog independently.
+
 ```mermaid
 sequenceDiagram
-    App->>MongoDB: insert/update
-    MongoDB-->>App: ack ✓
+    participant App
+    participant Primary as MongoDB Primary
+    participant S1 as MongoDB Secondary 1
+    participant S2 as MongoDB Secondary 2
+    participant mgch as mg-clickhouse
+    participant CH as ClickHouse
+
+    App->>Primary: insert/update
+    Primary-->>App: ack ✓
+    Primary->>S1: replication (async)
+    Primary->>S2: replication (async)
     Note right of App: Done. mg-clickhouse<br/>not in write path.
-    MongoDB->>mg-clickhouse: oplog entry (async)
-    mg-clickhouse->>ClickHouse: batch INSERT
-    mg-clickhouse->>mg-clickhouse: save position
+    Primary->>mgch: oplog entry (async)
+    mgch->>CH: batch INSERT
+    mgch->>mgch: save position
 ```
 
 ### Reads (query routing)
@@ -129,7 +144,7 @@ Standalone avg: **26.5x** | Distributed avg: **12.3x** | Distributed wins on lar
 
 ```yaml
 mongo:
-  uri: "mongodb://localhost:27017"
+  uri: "mongodb://mongo-primary:27017,mongo-secondary1:27017,mongo-secondary2:27017/?replicaSet=rs0"
   database: "myapp"
 
 clickhouse:
@@ -158,10 +173,14 @@ Validated at startup: required fields, port ranges (1-65535), batch_size (1-1M),
 
 ## 8. Deployment
 
+The default deployment uses a 3-node MongoDB replica set (`rs0`) with 1 primary and 2 secondaries. mg-clickhouse connects using the full replica set URI and automatically follows primary elections.
+
 ```mermaid
 flowchart LR
-    APP[Apps] --> MG[(MongoDB RS)]
-    MG -->|oplog| MGC[mg-clickhouse]
+    APP[Apps] --> MGP[(MongoDB Primary)]
+    MGP --- MGS1[(Secondary 1)]
+    MGP --- MGS2[(Secondary 2)]
+    MGP -->|oplog| MGC[mg-clickhouse]
     MGC -->|INSERT| LB[CH Load Balancer]
     LB --> S1[Shard 1]
     LB --> S2[Shard 2]
@@ -169,6 +188,7 @@ flowchart LR
 ```
 
 - Docker: non-root `mgch`, `tini` PID 1, graceful shutdown
+- Docker Compose: 3 MongoDB nodes (`mongo-primary`, `mongo-secondary1`, `mongo-secondary2`) with automatic `rs.initiate()`
 - K8s: `/health` (liveness), `/ready` (readiness, checks CH)
 - Security: RAII CURL, URL-encoded credentials, no built-in API auth (use gateway)
 
@@ -178,7 +198,8 @@ flowchart LR
 |:--------|:---------|:----------|
 | mg-clickhouse crash | Resume from saved position | None |
 | ClickHouse down | Retry on next flush | None |
-| MongoDB failover | Reconnect (3s backoff) | None |
+| MongoDB primary failover | Driver auto-discovers new primary via replica set URI (3s backoff) | None |
+| MongoDB secondary down | No impact — mg-clickhouse tails primary only | None |
 | Corrupted token | Start from oplog tail | Possible gap |
 
 ## 10. Roadmap

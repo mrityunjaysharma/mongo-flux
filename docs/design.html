@@ -42,15 +42,19 @@
 
 <h2>1. Architecture</h2>
 
+<p>MongoDB runs as a 3-node replica set (<code>rs0</code>): 1 primary + 2 secondaries. mg-clickhouse tails the oplog from the primary and automatically reconnects to the new primary after a failover election.</p>
+
 <div class="mermaid">
 flowchart TD
-    APP[Application] -->|writes| MG[(MongoDB)]
-    MG -->|oplog.rs| SYNC[Oplog / CS Sync]
+    APP[Application] -->|writes| MGP[(MongoDB Primary)]
+    MGP -->|replication| MGS1[(Secondary 1)]
+    MGP -->|replication| MGS2[(Secondary 2)]
+    MGP -->|oplog.rs| SYNC[Oplog / CS Sync]
     SYNC -->|batch INSERT| CH[(ClickHouse)]
     APP -->|"reads ?clickhouse=true"| ROUTER[Query Router]
     ROUTER -->|translate| XLAT[Query Translator<br/>BSON → AST → SQL]
     XLAT -->|SELECT| CH
-    ROUTER -->|standard reads| MG
+    ROUTER -->|standard reads| MGP
     SYNC -.->|lookup| REG[Schema Registry]
     XLAT -.->|lookup| REG
 </div>
@@ -58,14 +62,24 @@ flowchart TD
 <h2>2. Data Flow</h2>
 
 <h3>Write Path (zero overhead)</h3>
+<p>Writes target the MongoDB primary. The two secondaries replicate via the standard MongoDB protocol. mg-clickhouse tails the primary's oplog independently.</p>
 <div class="mermaid">
 sequenceDiagram
-    App->>MongoDB: insert/update
-    MongoDB-->>App: ack ✓
+    participant App
+    participant Primary as MongoDB Primary
+    participant S1 as Secondary 1
+    participant S2 as Secondary 2
+    participant mgch as mg-clickhouse
+    participant CH as ClickHouse
+
+    App->>Primary: insert/update
+    Primary-->>App: ack ✓
+    Primary->>S1: replication (async)
+    Primary->>S2: replication (async)
     Note right of App: Write done.<br/>mg-clickhouse not in path.
-    MongoDB->>mg-clickhouse: oplog entry (async)
-    mg-clickhouse->>ClickHouse: batch INSERT
-    mg-clickhouse->>mg-clickhouse: save position
+    Primary->>mgch: oplog entry (async)
+    mgch->>CH: batch INSERT
+    mgch->>mgch: save position
 </div>
 
 <h3>Read Path (query routing)</h3>
@@ -146,7 +160,7 @@ xychart-beta
 
 <h2>5. Configuration</h2>
 <pre><code>mongo:
-  uri: "mongodb://localhost:27017"
+  uri: "mongodb://mongo-primary:27017,mongo-secondary1:27017,mongo-secondary2:27017/?replicaSet=rs0"
   database: "myapp"
 
 clickhouse:
@@ -166,10 +180,13 @@ api:
 <p>Validated at startup: required fields, port ranges, batch_size (1-1M), mode must be <code>oplog</code> or <code>changestream</code>.</p>
 
 <h2>6. Deployment</h2>
+<p>The default deployment uses a 3-node MongoDB replica set (<code>rs0</code>) with 1 primary and 2 secondaries. mg-clickhouse connects using the full replica set URI and automatically follows primary elections.</p>
 <div class="mermaid">
 flowchart LR
-    APP[Apps] --> MG[(MongoDB RS)]
-    MG -->|oplog| MGC[mg-clickhouse]
+    APP[Apps] --> MGP[(MongoDB Primary)]
+    MGP --- MGS1[(Secondary 1)]
+    MGP --- MGS2[(Secondary 2)]
+    MGP -->|oplog| MGC[mg-clickhouse]
     MGC -->|INSERT| LB[CH Load Balancer]
     LB --> S1[Shard 1]
     LB --> S2[Shard 2]
@@ -178,6 +195,7 @@ flowchart LR
 
 <table>
     <tr><th>Aspect</th><th>Detail</th></tr>
+    <tr><td>MongoDB</td><td>3-node replica set: <code>mongo-primary</code>, <code>mongo-secondary1</code>, <code>mongo-secondary2</code> with auto <code>rs.initiate()</code></td></tr>
     <tr><td>Container</td><td>Non-root <code>mgch</code>, <code>tini</code> PID 1, graceful shutdown</td></tr>
     <tr><td>K8s probes</td><td><code>/health</code> (liveness), <code>/ready</code> (checks CH)</td></tr>
     <tr><td>Security</td><td>RAII CURL, URL-encoded creds, deploy API behind gateway</td></tr>
@@ -188,7 +206,8 @@ flowchart LR
     <tr><th>Failure</th><th>Recovery</th><th>Data Loss</th></tr>
     <tr><td>mg-clickhouse crash</td><td>Resume from saved position</td><td>None</td></tr>
     <tr><td>ClickHouse down</td><td>Retry on next flush</td><td>None</td></tr>
-    <tr><td>MongoDB failover</td><td>Reconnect (3s backoff)</td><td>None</td></tr>
+    <tr><td>MongoDB primary failover</td><td>Driver auto-discovers new primary via replica set URI (3s backoff)</td><td>None</td></tr>
+    <tr><td>MongoDB secondary down</td><td>No impact — mg-clickhouse tails primary only</td><td>None</td></tr>
     <tr><td>Corrupted token</td><td>Start from oplog tail</td><td>Possible gap</td></tr>
 </table>
 
