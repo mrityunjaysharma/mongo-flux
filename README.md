@@ -128,6 +128,40 @@ auto client = mongocxx::client{mongocxx::uri{"mongodb://localhost:27017"}};
 auto client = mongocxx::client{mongocxx::uri{"mongodb://localhost:27017/?clickhouse=true"}};
 ```
 
+## Benchmark: MongoDB vs ClickHouse Reads
+
+Benchmark run on 200,000 records per collection, 5 iterations per query.
+Full results in [`benchmark/results.json`](benchmark/results.json).
+
+| Query | MongoDB (ms) | ClickHouse (ms) | Speedup |
+|:------|:-------------|:----------------|:--------|
+| Simple filter (status = 'shipped') | 5.8 | 12.1 | 0.5x |
+| Range scan (amount > 1000) | 16.0 | 14.4 | 1.1x |
+| Count by status (GROUP BY) | 154.2 | 10.8 | **14.3x** |
+| Avg amount by region (GROUP BY) | 126.9 | 8.3 | **15.4x** |
+| Top 10 customers by total spend | 180.8 | 16.3 | **11.1x** |
+| Multi-filter (region + status + amount range) | 29.4 | 8.1 | 3.6x |
+| Date range scan (3 months) | 268.3 | 14.3 | **18.7x** |
+| Events: count by type and page (2-dim GROUP BY) | 175.3 | 8.7 | **20.2x** |
+| Events: avg duration by event type | 172.1 | 10.6 | **16.2x** |
+| Events: top 20 users by event count | 169.9 | 10.4 | **16.4x** |
+| Full table scan count | 65.6 | 5.0 | **13.2x** |
+| Percentile approximation (heavy analytics) | 155.3 | 12.4 | **12.5x** |
+
+**Average speedup: 11.9x** for analytical queries. MongoDB wins on simple indexed point lookups where HTTP round-trip overhead dominates. ClickHouse dominates on aggregations, scans, and GROUP BY operations.
+
+### Running the Benchmark
+
+```bash
+pip install pymongo requests
+python3 benchmark/read_benchmark.py --records 200000 --iterations 5
+```
+
+Options:
+- `--records N` — number of records per collection (default: 100,000)
+- `--iterations N` — query repetitions for stable timing (default: 5)
+- `--skip-load` — reuse existing data without reloading
+
 ## License
 
 Apache-2.0
