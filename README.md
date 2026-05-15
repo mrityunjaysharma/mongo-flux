@@ -1,6 +1,6 @@
 # mg-clickhouse
 
-Real-time MongoDB to ClickHouse replication with transparent analytics query routing. mg-clickhouse makes ClickHouse behave as a "virtual secondary" that receives the same write stream as MongoDB replica set members, while transparently routing analytical reads to ClickHouse via a single URI parameter.
+Real-time MongoDB to ClickHouse replication with transparent analytics query routing. Makes ClickHouse behave as a "virtual secondary" — same write stream as replica set members, zero write overhead, 12-84x faster analytical reads.
 
 ## Architecture
 
@@ -19,77 +19,56 @@ Real-time MongoDB to ClickHouse replication with transparent analytics query rou
                         └────────────┘
 ```
 
-## Key Features
+## Benchmark Results
 
-- Real-time CDC replication via oplog tailing (same mechanism as MongoDB secondaries)
-- Transparent query routing with a single URI parameter (`?clickhouse=true`)
-- MongoDB `find()` and `aggregate()` to ClickHouse SQL translation via expression tree AST
-- Schema mapping management through a REST API
-- Crash recovery with persisted oplog timestamps
-- Dual sync modes: direct oplog tailing or change streams (for Atlas/sharded clusters)
-- Health and readiness probes for Kubernetes deployments
+### Read Performance (1M records, 5 iterations)
+
+| Query | MongoDB (ms) | ClickHouse (ms) | Speedup |
+|:------|:-------------|:----------------|:--------|
+| Count by status (GROUP BY) | 506.5 | 10.9 | 46.7x |
+| Avg amount by region | 558.8 | 9.4 | 59.2x |
+| Top 10 customers by spend | 855.5 | 40.8 | 21.0x |
+| Multi-filter compound | 109.0 | 11.4 | 9.6x |
+| Date range scan (3 months) | 973.5 | 16.8 | 58.1x |
+| 2-dim GROUP BY (events) | 628.8 | 14.0 | 45.1x |
+| Avg duration by event type | 685.5 | 9.0 | 76.5x |
+| Top 20 users by event count | 727.4 | 33.4 | 21.8x |
+| Full table count | 262.3 | 3.1 | 84.1x |
+| Percentile + multi-agg | 659.4 | 11.9 | 55.4x |
+
+**Average read speedup: 39.9x** at 1M records. Scales superlinearly — 12x at 200K, 40x at 1M.
+
+### Write Overhead (200K records)
+
+| Metric | Standalone MongoDB | With mg-clickhouse | Overhead |
+|:-------|:-------------------|:-------------------|:---------|
+| Batch throughput | 28,639 docs/s | 31,858 docs/s | ~0% |
+| Single insert avg latency | 2.67 ms | 2.60 ms | ~0% |
+| Single insert P99 latency | 8.25 ms | 8.08 ms | ~0% |
+
+**Zero write overhead.** mg-clickhouse tails the oplog asynchronously — MongoDB acknowledges writes before the sync layer sees them.
+
+Full results: [`benchmark/results.json`](benchmark/results.json), [`benchmark/write_results.json`](benchmark/write_results.json)
 
 ## How It Works
 
-### Replication
+**Replication**: Opens a tailable-await cursor on `local.oplog.rs` (same mechanism MongoDB secondaries use), extracts mapped fields, batches them, and flushes to ClickHouse via HTTP INSERT. Persists oplog timestamps for crash recovery.
 
-MongoDB secondaries replicate by tailing the primary's oplog (`local.oplog.rs`), a capped collection that records every write operation. mg-clickhouse does exactly the same thing: it opens a tailable-await cursor on the oplog and applies each operation to ClickHouse. This gives ClickHouse the same replication latency as real secondaries.
+**Write path**: All writes go to MongoDB primary unchanged. No application code changes needed.
 
-The sync pipeline:
+**Read path**: Standard URI reads from MongoDB. Add `?clickhouse=true` to route reads through the query translator to ClickHouse.
 
-1. Connects to the replica set (same as a secondary joining)
-2. Opens a tailable-await cursor on `local.oplog.rs`
-3. For each insert/update, extracts mapped fields and batches them
-4. Flushes batches to ClickHouse via HTTP INSERT
-5. Persists the oplog timestamp for crash recovery (like a secondary's checkpoint)
-
-### Write Path
-
-All writes go to MongoDB primary (normal MongoDB behavior). mg-clickhouse tails the oplog in real-time and syncs only mapped fields to ClickHouse. The application does not need any code changes for writes.
-
-### Read Path
-
-Reads are routed based on the connection URI:
-
-- Standard URI → reads from MongoDB (default, no change required)
-- URI with `?clickhouse=true` → reads are translated to ClickHouse SQL
-
-### Query Translation
-
-The translator uses a two-phase architecture with an expression tree (AST):
-
-1. **Parse phase**: BSON query documents are parsed into an `ExprNode` tree
-2. **Emit phase**: The tree is walked to produce ClickHouse SQL
-
-Supported operations:
-
-| MongoDB | ClickHouse |
-|:--------|:-----------|
-| `find()` with filter, projection, sort, limit, skip | `SELECT ... WHERE ... ORDER BY ... LIMIT` |
-| `aggregate()` with `$match` | `WHERE` / `HAVING` |
-| `aggregate()` with `$group` | `GROUP BY` with aggregation functions |
-| `aggregate()` with `$sort`, `$limit` | `ORDER BY`, `LIMIT` |
-| `aggregate()` with `$project` | `SELECT` column list |
-| `aggregate()` with `$count` | `SELECT count(*)` |
-| Filter operators: `$gt`, `$gte`, `$lt`, `$lte`, `$eq`, `$ne` | Comparison operators |
-| `$in`, `$nin` | `IN (...)`, `NOT IN (...)` |
-| `$and`, `$or`, `$nor` | `AND`, `OR`, `NOT (... OR ...)` |
-| `$exists` | `IS NULL` / `IS NOT NULL` |
-| `$regex` | `match()` |
+**Query translation**: Two-phase AST approach — BSON is parsed into an expression tree, then emitted as ClickHouse SQL. Supports `find()`, `aggregate()` with `$match`, `$group`, `$sort`, `$limit`, `$project`, `$count`, and filter operators (`$gt`, `$in`, `$regex`, `$and`/`$or`, etc.).
 
 ## Quick Start
-
-### Docker Compose (recommended)
 
 ```bash
 docker compose up --build
 ```
 
-This starts MongoDB (replica set), ClickHouse, and mg-clickhouse. The management API is available at `http://localhost:9090`.
+Starts MongoDB (replica set), ClickHouse, and mg-clickhouse. API at `http://localhost:9090`.
 
-### Create a Schema Mapping
-
-Simple mapping (auto-generates DDL):
+### Create a Mapping
 
 ```bash
 curl -X POST http://localhost:9090/api/v1/mappings \
@@ -102,17 +81,19 @@ curl -X POST http://localhost:9090/api/v1/mappings \
       {"mongo_field": "_id", "ch_column": "id", "ch_type": "String"},
       {"mongo_field": "amount", "ch_column": "amount", "ch_type": "Float64"},
       {"mongo_field": "status", "ch_column": "status", "ch_type": "LowCardinality(String)"},
-      {"mongo_field": "region", "ch_column": "region", "ch_type": "LowCardinality(String)"},
       {"mongo_field": "created_at", "ch_column": "created_at", "ch_type": "DateTime CODEC(Delta(4), ZSTD(1))"}
     ],
     "engine": "ReplacingMergeTree",
     "order_by": ["created_at", "id"]
   }'
+
+# Create the ClickHouse table
+curl -X POST http://localhost:9090/api/v1/mappings/orders/sync
 ```
 
-### Production Table with Advanced ClickHouse Features
+### Production Table (Advanced ClickHouse Features)
 
-For production workloads requiring codecs, bloom filters, TTL, partitioning, and tiered storage, create the table directly in ClickHouse and then register the mapping:
+For workloads requiring codecs, bloom filters, TTL, and tiered storage — create the table directly:
 
 ```sql
 CREATE TABLE IF NOT EXISTS analytics.k8s_logs ON CLUSTER 'prod-cluster'
@@ -122,7 +103,6 @@ CREATE TABLE IF NOT EXISTS analytics.k8s_logs ON CLUSTER 'prod-cluster'
     `TraceId`            String CODEC(ZSTD(1)),
     `SpanId`             String CODEC(ZSTD(1)),
     `SeverityText`       LowCardinality(String) CODEC(ZSTD(1)),
-    `SeverityNumber`     UInt8,
     `ServiceName`        LowCardinality(String) CODEC(ZSTD(1)),
     `Body`               String CODEC(ZSTD(1)),
     `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
@@ -130,21 +110,18 @@ CREATE TABLE IF NOT EXISTS analytics.k8s_logs ON CLUSTER 'prod-cluster'
 
     INDEX idx_trace_id TraceId TYPE bloom_filter(0.001) GRANULARITY 1,
     INDEX idx_res_attr_key mapKeys(ResourceAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
-    INDEX idx_res_attr_value mapValues(ResourceAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
     INDEX idx_log_attr_key mapKeys(LogAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
-    INDEX idx_log_attr_value mapValues(LogAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
     INDEX idx_body Body TYPE tokenbf_v1(32768, 3, 0) GRANULARITY 8
 )
 ENGINE = MergeTree
 PARTITION BY toDate(Timestamp)
-PRIMARY KEY (ServiceName, Timestamp, TimestampTime)
 ORDER BY (ServiceName, Timestamp, TimestampTime)
 TTL TimestampTime + toIntervalDay(7) TO VOLUME 'cold',
     TimestampTime + INTERVAL 1 YEAR
 SETTINGS storage_policy = 'hot_cold', index_granularity = 8192, ttl_only_drop_parts = 1;
 ```
 
-Then register the mapping so mg-clickhouse knows which MongoDB fields to sync:
+Then register the field mapping:
 
 ```bash
 curl -X POST http://localhost:9090/api/v1/mappings \
@@ -156,8 +133,6 @@ curl -X POST http://localhost:9090/api/v1/mappings \
     "fields": [
       {"mongo_field": "timestamp", "ch_column": "Timestamp", "ch_type": "DateTime64(9)"},
       {"mongo_field": "traceId", "ch_column": "TraceId", "ch_type": "String"},
-      {"mongo_field": "spanId", "ch_column": "SpanId", "ch_type": "String"},
-      {"mongo_field": "severity", "ch_column": "SeverityText", "ch_type": "LowCardinality(String)"},
       {"mongo_field": "service", "ch_column": "ServiceName", "ch_type": "LowCardinality(String)"},
       {"mongo_field": "body", "ch_column": "Body", "ch_type": "String"},
       {"mongo_field": "resource", "ch_column": "ResourceAttributes", "ch_type": "Map(LowCardinality(String), String)"},
@@ -168,66 +143,19 @@ curl -X POST http://localhost:9090/api/v1/mappings \
   }'
 ```
 
-### Provision the ClickHouse Table
-
-For simple mappings, mg-clickhouse auto-generates and executes the DDL:
-
-```bash
-curl -X POST http://localhost:9090/api/v1/mappings/orders/sync
-```
-
-For pre-created tables (like the k8s_logs example above), skip this step.
-
-### Verify Sync Status
-
-```bash
-curl http://localhost:9090/api/v1/status
-```
-
-## Management API
+## API Reference
 
 | Method | Endpoint | Description |
 |:-------|:---------|:------------|
-| `GET` | `/api/v1/mappings` | List all schema mappings |
-| `GET` | `/api/v1/mappings/:collection` | Get mapping for a collection |
-| `POST` | `/api/v1/mappings` | Create or update a mapping |
-| `DELETE` | `/api/v1/mappings/:collection` | Delete a mapping |
-| `POST` | `/api/v1/mappings/:collection/sync` | Create ClickHouse table from mapping |
-| `GET` | `/api/v1/status` | System health and sync status |
-| `POST` | `/api/v1/sync/restart` | Restart all sync threads |
-| `GET` | `/health` | Liveness probe (always 200) |
-| `GET` | `/ready` | Readiness probe (checks ClickHouse connectivity) |
-
-## Build from Source
-
-### Prerequisites
-
-- C++17 compiler (GCC 9+ or Clang 10+)
-- CMake 3.16+
-- MongoDB C Driver (libmongoc 1.28+)
-- MongoDB C++ Driver (mongocxx 3.9+)
-- libcurl with OpenSSL
-- pkg-config
-
-The following are fetched automatically via CMake FetchContent:
-
-- nlohmann/json 3.11
-- cpp-httplib 0.15
-- yaml-cpp 0.8
-
-### Build
-
-```bash
-mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-make -j$(nproc)
-```
-
-### Run
-
-```bash
-./build/mg_clickhouse config/mg-clickhouse.yaml
-```
+| `GET` | `/api/v1/mappings` | List all mappings |
+| `GET` | `/api/v1/mappings/:collection` | Get mapping |
+| `POST` | `/api/v1/mappings` | Create/update mapping |
+| `DELETE` | `/api/v1/mappings/:collection` | Delete mapping |
+| `POST` | `/api/v1/mappings/:collection/sync` | Create ClickHouse table |
+| `GET` | `/api/v1/status` | Health + sync status |
+| `POST` | `/api/v1/sync/restart` | Restart sync threads |
+| `GET` | `/health` | Liveness probe |
+| `GET` | `/ready` | Readiness probe |
 
 ## Configuration
 
@@ -244,9 +172,9 @@ clickhouse:
   password: ""
 
 sync:
-  mode: "oplog"           # "oplog" (direct tailing) or "changestream" (Atlas/sharded)
-  batch_size: 1000        # Max rows per ClickHouse INSERT batch
-  flush_interval_ms: 500  # Max time before flushing a partial batch
+  mode: "oplog"           # "oplog" or "changestream" (Atlas/sharded)
+  batch_size: 1000
+  flush_interval_ms: 500
   resume_token_path: "/var/lib/mg-clickhouse/resume_tokens"
 
 api:
@@ -254,117 +182,53 @@ api:
   bind: "0.0.0.0"
 
 routing:
-  clickhouse_param: "clickhouse"  # URI parameter that triggers ClickHouse reads
-
-logging:
-  level: "info"           # debug, info, warn, error
-  file: ""                # Empty = stdout
+  clickhouse_param: "clickhouse"
 ```
 
-### Sync Modes
+| Sync Mode | Use Case | Requirement |
+|:----------|:---------|:------------|
+| `oplog` | Direct replica set, lowest latency | Access to `local.oplog.rs` |
+| `changestream` | Atlas, sharded clusters | MongoDB 4.0+ |
 
-| Mode | Use Case | Requirements |
-|:-----|:---------|:-------------|
-| `oplog` | Direct replica set access, lowest latency | Direct access to `local.oplog.rs` |
-| `changestream` | MongoDB Atlas, sharded clusters | MongoDB 4.0+, change streams enabled |
+## Build
+
+```bash
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+make -j$(nproc)
+./mg_clickhouse /path/to/config.yaml
+```
+
+Prerequisites: C++17, CMake 3.16+, mongocxx 3.9+, libcurl, OpenSSL. nlohmann/json, cpp-httplib, and yaml-cpp are fetched via CMake FetchContent.
 
 ## Deployment
 
-### Docker
-
 ```bash
 docker build -t mg-clickhouse .
-docker run -v ./config/mg-clickhouse.yaml:/etc/mg-clickhouse/mg-clickhouse.yaml \
-  -p 9090:9090 mg-clickhouse
+docker run -v ./config.yaml:/etc/mg-clickhouse/mg-clickhouse.yaml -p 9090:9090 mg-clickhouse
 ```
 
-### Kubernetes
-
-The container exposes health endpoints for probe configuration:
+Kubernetes probes:
 
 ```yaml
 livenessProbe:
-  httpGet:
-    path: /health
-    port: 9090
-  initialDelaySeconds: 5
-  periodSeconds: 10
-
+  httpGet: { path: /health, port: 9090 }
 readinessProbe:
-  httpGet:
-    path: /ready
-    port: 9090
-  initialDelaySeconds: 5
-  periodSeconds: 5
+  httpGet: { path: /ready, port: 9090 }
 ```
 
-The container runs as non-root user `mgch` and uses `tini` as PID 1 for proper signal handling.
+Runs as non-root (`mgch`), uses `tini` for signal handling, graceful shutdown flushes pending batches and persists oplog position.
 
-### Graceful Shutdown
-
-mg-clickhouse handles `SIGINT` and `SIGTERM` for graceful shutdown:
-
-1. Stops accepting new API requests
-2. Flushes pending batches to ClickHouse
-3. Persists the current oplog position
-4. Closes all connections
-
-## Benchmark: MongoDB vs ClickHouse Reads
-
-Benchmark run on 200,000 records per collection, 5 iterations per query (median of runs).
-Full results in [`benchmark/results.json`](benchmark/results.json).
-
-| Query | MongoDB (ms) | ClickHouse (ms) | Speedup |
-|:------|:-------------|:----------------|:--------|
-| Simple filter (indexed point lookup) | 5.8 | 12.1 | 0.5x |
-| Range scan (amount > 1000) | 16.0 | 14.4 | 1.1x |
-| Count by status (GROUP BY) | 154.2 | 10.8 | 14.3x |
-| Avg amount by region (GROUP BY) | 126.9 | 8.3 | 15.4x |
-| Top 10 customers by total spend | 180.8 | 16.3 | 11.1x |
-| Multi-filter compound query | 29.4 | 8.1 | 3.6x |
-| Date range scan (3 months) | 268.3 | 14.3 | 18.7x |
-| 2-dimensional GROUP BY (events) | 175.3 | 8.7 | 20.2x |
-| Avg duration by event type | 172.1 | 10.6 | 16.2x |
-| Top 20 users by event count | 169.9 | 10.4 | 16.4x |
-| Full table count | 65.6 | 5.0 | 13.2x |
-| Percentile + multi-agg (heavy analytics) | 155.3 | 12.4 | 12.5x |
-
-**Average speedup: 11.9x** for analytical queries. MongoDB retains an advantage on simple indexed point lookups where HTTP round-trip overhead dominates. ClickHouse dominates on aggregations, full scans, and GROUP BY operations — the gap widens further at larger data volumes due to columnar compression and vectorized execution.
-
-### Running the Benchmark
+## Running Benchmarks
 
 ```bash
 pip install pymongo requests
-python3 benchmark/read_benchmark.py --records 200000 --iterations 5
-```
 
-| Flag | Description | Default |
-|:-----|:------------|:--------|
-| `--records N` | Records per collection | 100,000 |
-| `--iterations N` | Query repetitions for stable timing | 5 |
-| `--skip-load` | Reuse existing data without reloading | off |
+# Read benchmark
+python3 benchmark/read_benchmark.py --records 1000000 --iterations 5
 
-## Project Structure
-
-```
-mg-clickhouse/
-├── include/mg_clickhouse/     # Public headers
-│   ├── config.h               # Configuration structs and loader
-│   ├── schema_mapping.h       # Collection-to-table mapping registry
-│   ├── expr_tree.h            # Expression tree AST for query translation
-│   ├── query_translator.h     # BSON → ExprTree → SQL translator
-│   ├── clickhouse_client.h    # ClickHouse HTTP client
-│   ├── oplog_sync.h           # Oplog-based CDC replication
-│   ├── change_stream_sync.h   # Change stream CDC (Atlas/sharded)
-│   ├── mongo_proxy.h          # Read routing proxy
-│   ├── management_api.h       # REST API server
-│   └── routing.h              # URI parsing and routing detection
-├── src/                       # Implementation files
-├── config/                    # Example configuration files
-├── benchmark/                 # Performance benchmarking tools
-├── CMakeLists.txt             # Build configuration
-├── Dockerfile                 # Multi-stage production image
-└── docker-compose.yml         # Local development stack
+# Write overhead benchmark
+python3 benchmark/write_benchmark.py --records 200000 --batch-size 1000
 ```
 
 ## License
