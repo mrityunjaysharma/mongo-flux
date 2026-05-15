@@ -28,6 +28,8 @@ struct CollectionMapping {
     std::vector<FieldMapping> fields;
     std::string engine = "ReplacingMergeTree";
     std::vector<std::string> order_by;
+    std::string cluster;       // Cluster name for ON CLUSTER DDL (empty = standalone)
+    std::string sharding_key;  // Sharding key for Distributed engine (empty = rand())
     bool enabled = true;
 };
 

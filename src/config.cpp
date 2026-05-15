@@ -27,6 +27,7 @@ Config load_config(const std::string& path) {
         if (ch["database"]) config.clickhouse.database = ch["database"].as<std::string>();
         if (ch["user"]) config.clickhouse.user = ch["user"].as<std::string>();
         if (ch["password"]) config.clickhouse.password = ch["password"].as<std::string>();
+        if (ch["cluster"]) config.clickhouse.cluster = ch["cluster"].as<std::string>();
     }
 
     if (auto sync = root["sync"]) {

@@ -28,6 +28,8 @@ void to_json(nlohmann::json& j, const CollectionMapping& m) {
         {"fields", m.fields},
         {"engine", m.engine},
         {"order_by", m.order_by},
+        {"cluster", m.cluster},
+        {"sharding_key", m.sharding_key},
         {"enabled", m.enabled}
     };
 }
@@ -45,6 +47,10 @@ void from_json(const nlohmann::json& j, CollectionMapping& m) {
         j.at("engine").get_to(m.engine);
     if (j.contains("order_by"))
         j.at("order_by").get_to(m.order_by);
+    if (j.contains("cluster"))
+        j.at("cluster").get_to(m.cluster);
+    if (j.contains("sharding_key"))
+        j.at("sharding_key").get_to(m.sharding_key);
     if (j.contains("enabled"))
         j.at("enabled").get_to(m.enabled);
 }
@@ -84,9 +90,24 @@ bool SchemaMappingRegistry::has_mapping(const std::string& collection) const {
 
 std::string SchemaMappingRegistry::generate_create_table_sql(const CollectionMapping& mapping) const {
     std::ostringstream sql;
+
+    // Local table (the actual MergeTree table on each shard)
+    std::string local_table = mapping.clickhouse_table;
+    if (!mapping.cluster.empty()) {
+        // For clustered deployments, the local table gets a _local suffix
+        // and a Distributed table is created with the user-facing name
+        local_table = mapping.clickhouse_table + "_local";
+    }
+
     sql << "CREATE TABLE IF NOT EXISTS "
-        << mapping.clickhouse_database << "." << mapping.clickhouse_table
-        << " (\n";
+        << mapping.clickhouse_database << "." << local_table;
+
+    // ON CLUSTER clause for distributed DDL
+    if (!mapping.cluster.empty()) {
+        sql << " ON CLUSTER '" << mapping.cluster << "'";
+    }
+
+    sql << " (\n";
 
     for (size_t i = 0; i < mapping.fields.size(); ++i) {
         const auto& field = mapping.fields[i];
@@ -104,6 +125,20 @@ std::string SchemaMappingRegistry::generate_create_table_sql(const CollectionMap
             sql << mapping.order_by[i];
         }
         sql << ")\n";
+    }
+
+    // For clustered deployments, also generate the Distributed table DDL
+    if (!mapping.cluster.empty()) {
+        std::string shard_key = mapping.sharding_key.empty() ? "rand()" : mapping.sharding_key;
+
+        sql << ";\n\n";
+        sql << "CREATE TABLE IF NOT EXISTS "
+            << mapping.clickhouse_database << "." << mapping.clickhouse_table
+            << " ON CLUSTER '" << mapping.cluster << "'\n";
+        sql << "AS " << mapping.clickhouse_database << "." << local_table << "\n";
+        sql << "ENGINE = Distributed('" << mapping.cluster << "', '"
+            << mapping.clickhouse_database << "', '" << local_table << "', "
+            << shard_key << ")\n";
     }
 
     return sql.str();

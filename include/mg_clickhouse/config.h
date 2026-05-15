@@ -16,6 +16,7 @@ struct ClickHouseConfig {
     std::string database = "analytics";
     std::string user = "default";
     std::string password;
+    std::string cluster;  // Cluster name for distributed DDL (empty = standalone)
 };
 
 struct SyncConfig {

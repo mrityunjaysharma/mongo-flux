@@ -1,0 +1,70 @@
+services:
+  clickhouse-keeper:
+    image: clickhouse/clickhouse-keeper:24
+    ports:
+      - "9181:9181"
+    volumes:
+      - keeper_data:/var/lib/clickhouse-keeper
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo ruok | nc localhost 9181 | grep imok"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  clickhouse-shard1:
+    image: clickhouse/clickhouse-server:24
+    ports:
+      - "8124:8123"
+    volumes:
+      - ./cluster-config.xml:/etc/clickhouse-server/config.d/cluster.xml
+      - shard1_data:/var/lib/clickhouse
+    depends_on:
+      clickhouse-keeper:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  clickhouse-shard2:
+    image: clickhouse/clickhouse-server:24
+    ports:
+      - "8125:8123"
+    volumes:
+      - ./cluster-config.xml:/etc/clickhouse-server/config.d/cluster.xml
+      - shard2_data:/var/lib/clickhouse
+    depends_on:
+      clickhouse-keeper:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  clickhouse-shard3:
+    image: clickhouse/clickhouse-server:24
+    ports:
+      - "8126:8123"
+    volumes:
+      - ./cluster-config.xml:/etc/clickhouse-server/config.d/cluster.xml
+      - shard3_data:/var/lib/clickhouse
+    depends_on:
+      clickhouse-keeper:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  keeper_data:
+  shard1_data:
+  shard2_data:
+  shard3_data:

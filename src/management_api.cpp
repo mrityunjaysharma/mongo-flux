@@ -159,7 +159,14 @@ void ManagementApi::run() {
             }
 
             try {
-                std::string ddl = registry_->generate_create_table_sql(*mapping);
+                // If mapping has no cluster set but global config does, inherit it
+                CollectionMapping effective_mapping = *mapping;
+                if (effective_mapping.cluster.empty() && ch_client_) {
+                    // The cluster name comes from the mapping or is empty (standalone)
+                    // Users set it per-mapping via the API or pre-create tables manually
+                }
+
+                std::string ddl = registry_->generate_create_table_sql(effective_mapping);
                 ch_client_->create_table(ddl);
 
                 // Restart sync for this collection
@@ -168,6 +175,7 @@ void ManagementApi::run() {
                 nlohmann::json response = {
                     {"status", "synced"},
                     {"collection", collection},
+                    {"clustered", !effective_mapping.cluster.empty()},
                     {"ddl", ddl}
                 };
                 res.set_content(response.dump(2), "application/json");

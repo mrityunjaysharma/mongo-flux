@@ -178,7 +178,21 @@ bool ClickHouseClient::table_exists(const std::string& database, const std::stri
 }
 
 void ClickHouseClient::create_table(const std::string& ddl) {
-    impl_->http_query(ddl);
+    // Support multi-statement DDL (e.g., local table + Distributed table for clusters)
+    // ClickHouse HTTP interface executes one statement per request
+    std::istringstream stream(ddl);
+    std::string statement;
+    while (std::getline(stream, statement, ';')) {
+        // Trim whitespace
+        size_t start = statement.find_first_not_of(" \t\n\r");
+        if (start == std::string::npos) continue;
+        std::string trimmed = statement.substr(start);
+        size_t end = trimmed.find_last_not_of(" \t\n\r");
+        if (end != std::string::npos) trimmed = trimmed.substr(0, end + 1);
+        if (trimmed.empty()) continue;
+
+        impl_->http_query(trimmed);
+    }
 }
 
 void ClickHouseClient::ping() {

@@ -1,0 +1,35 @@
+<clickhouse>
+    <remote_servers>
+        <bench_cluster>
+            <shard>
+                <replica>
+                    <host>clickhouse-shard1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>clickhouse-shard2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>clickhouse-shard3</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </bench_cluster>
+    </remote_servers>
+
+    <zookeeper>
+        <node>
+            <host>clickhouse-keeper</host>
+            <port>9181</port>
+        </node>
+    </zookeeper>
+
+    <macros>
+        <cluster>bench_cluster</cluster>
+    </macros>
+</clickhouse>
