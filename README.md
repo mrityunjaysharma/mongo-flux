@@ -89,6 +89,8 @@ This starts MongoDB (replica set), ClickHouse, and mg-clickhouse. The management
 
 ### Create a Schema Mapping
 
+Simple mapping (auto-generates DDL):
+
 ```bash
 curl -X POST http://localhost:9090/api/v1/mappings \
   -H "Content-Type: application/json" \
@@ -99,19 +101,82 @@ curl -X POST http://localhost:9090/api/v1/mappings \
     "fields": [
       {"mongo_field": "_id", "ch_column": "id", "ch_type": "String"},
       {"mongo_field": "amount", "ch_column": "amount", "ch_type": "Float64"},
-      {"mongo_field": "status", "ch_column": "status", "ch_type": "String"},
-      {"mongo_field": "created_at", "ch_column": "created_at", "ch_type": "DateTime"}
+      {"mongo_field": "status", "ch_column": "status", "ch_type": "LowCardinality(String)"},
+      {"mongo_field": "region", "ch_column": "region", "ch_type": "LowCardinality(String)"},
+      {"mongo_field": "created_at", "ch_column": "created_at", "ch_type": "DateTime CODEC(Delta(4), ZSTD(1))"}
     ],
     "engine": "ReplacingMergeTree",
     "order_by": ["created_at", "id"]
   }'
 ```
 
+### Production Table with Advanced ClickHouse Features
+
+For production workloads requiring codecs, bloom filters, TTL, partitioning, and tiered storage, create the table directly in ClickHouse and then register the mapping:
+
+```sql
+CREATE TABLE IF NOT EXISTS analytics.k8s_logs ON CLUSTER 'prod-cluster'
+(
+    `Timestamp`          DateTime64(9) CODEC(Delta(8), ZSTD(1)),
+    `TimestampTime`      DateTime DEFAULT toDateTime(Timestamp),
+    `TraceId`            String CODEC(ZSTD(1)),
+    `SpanId`             String CODEC(ZSTD(1)),
+    `SeverityText`       LowCardinality(String) CODEC(ZSTD(1)),
+    `SeverityNumber`     UInt8,
+    `ServiceName`        LowCardinality(String) CODEC(ZSTD(1)),
+    `Body`               String CODEC(ZSTD(1)),
+    `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+    `LogAttributes`      Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+
+    INDEX idx_trace_id TraceId TYPE bloom_filter(0.001) GRANULARITY 1,
+    INDEX idx_res_attr_key mapKeys(ResourceAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
+    INDEX idx_res_attr_value mapValues(ResourceAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
+    INDEX idx_log_attr_key mapKeys(LogAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
+    INDEX idx_log_attr_value mapValues(LogAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
+    INDEX idx_body Body TYPE tokenbf_v1(32768, 3, 0) GRANULARITY 8
+)
+ENGINE = MergeTree
+PARTITION BY toDate(Timestamp)
+PRIMARY KEY (ServiceName, Timestamp, TimestampTime)
+ORDER BY (ServiceName, Timestamp, TimestampTime)
+TTL TimestampTime + toIntervalDay(7) TO VOLUME 'cold',
+    TimestampTime + INTERVAL 1 YEAR
+SETTINGS storage_policy = 'hot_cold', index_granularity = 8192, ttl_only_drop_parts = 1;
+```
+
+Then register the mapping so mg-clickhouse knows which MongoDB fields to sync:
+
+```bash
+curl -X POST http://localhost:9090/api/v1/mappings \
+  -H "Content-Type: application/json" \
+  -d '{
+    "collection": "k8s_logs",
+    "clickhouse_table": "k8s_logs",
+    "clickhouse_database": "analytics",
+    "fields": [
+      {"mongo_field": "timestamp", "ch_column": "Timestamp", "ch_type": "DateTime64(9)"},
+      {"mongo_field": "traceId", "ch_column": "TraceId", "ch_type": "String"},
+      {"mongo_field": "spanId", "ch_column": "SpanId", "ch_type": "String"},
+      {"mongo_field": "severity", "ch_column": "SeverityText", "ch_type": "LowCardinality(String)"},
+      {"mongo_field": "service", "ch_column": "ServiceName", "ch_type": "LowCardinality(String)"},
+      {"mongo_field": "body", "ch_column": "Body", "ch_type": "String"},
+      {"mongo_field": "resource", "ch_column": "ResourceAttributes", "ch_type": "Map(LowCardinality(String), String)"},
+      {"mongo_field": "attributes", "ch_column": "LogAttributes", "ch_type": "Map(LowCardinality(String), String)"}
+    ],
+    "engine": "MergeTree",
+    "order_by": ["ServiceName", "Timestamp"]
+  }'
+```
+
 ### Provision the ClickHouse Table
+
+For simple mappings, mg-clickhouse auto-generates and executes the DDL:
 
 ```bash
 curl -X POST http://localhost:9090/api/v1/mappings/orders/sync
 ```
+
+For pre-created tables (like the k8s_logs example above), skip this step.
 
 ### Verify Sync Status
 
