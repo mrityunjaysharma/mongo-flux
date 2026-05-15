@@ -25,16 +25,16 @@ Real-time MongoDB to ClickHouse replication with transparent analytics query rou
 
 | Query | MongoDB (ms) | ClickHouse (ms) | Speedup |
 |:------|:-------------|:----------------|:--------|
-| Count by status (GROUP BY) | 506.5 | 10.9 | 46.7x |
-| Avg amount by region | 558.8 | 9.4 | 59.2x |
-| Top 10 customers by spend | 855.5 | 40.8 | 21.0x |
-| Multi-filter compound | 109.0 | 11.4 | 9.6x |
-| Date range scan (3 months) | 973.5 | 16.8 | 58.1x |
-| 2-dim GROUP BY (events) | 628.8 | 14.0 | 45.1x |
-| Avg duration by event type | 685.5 | 9.0 | 76.5x |
-| Top 20 users by event count | 727.4 | 33.4 | 21.8x |
-| Full table count | 262.3 | 3.1 | 84.1x |
-| Percentile + multi-agg | 659.4 | 11.9 | 55.4x |
+| [Count by status (GROUP BY)](benchmark/results.json#L24) | 506.5 | 10.9 | 46.7x |
+| [Avg amount by region](benchmark/results.json#L33) | 558.8 | 9.4 | 59.2x |
+| [Top 10 customers by spend](benchmark/results.json#L42) | 855.5 | 40.8 | 21.0x |
+| [Multi-filter compound](benchmark/results.json#L51) | 109.0 | 11.4 | 9.6x |
+| [Date range scan (3 months)](benchmark/results.json#L60) | 973.5 | 16.8 | 58.1x |
+| [2-dim GROUP BY (events)](benchmark/results.json#L69) | 628.8 | 14.0 | 45.1x |
+| [Avg duration by event type](benchmark/results.json#L78) | 685.5 | 9.0 | 76.5x |
+| [Top 20 users by event count](benchmark/results.json#L87) | 727.4 | 33.4 | 21.8x |
+| [Full table count](benchmark/results.json#L96) | 262.3 | 3.1 | 84.1x |
+| [Percentile + multi-agg](benchmark/results.json#L105) | 659.4 | 11.9 | 55.4x |
 
 **Average read speedup: 39.9x** at 1M records. Scales superlinearly — 12x at 200K, 40x at 1M.
 
