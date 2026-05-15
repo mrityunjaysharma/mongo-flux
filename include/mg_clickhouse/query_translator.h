@@ -102,6 +102,14 @@ private:
                                   const bsoncxx::document::element& value,
                                   const CollectionMapping& mapping) const;
 
+    /** Parse an aggregation expression (arithmetic, string, date, conditional). */
+    ExprNodePtr parse_agg_expression(const bsoncxx::document::element& expr,
+                                     const CollectionMapping& mapping) const;
+
+    /** Parse a field reference like "$amount" or a literal value. */
+    ExprNodePtr parse_field_or_literal(const bsoncxx::document::element& elem,
+                                       const CollectionMapping& mapping) const;
+
     /** Convert a BSON element to a Literal ExprNode. */
     ExprNodePtr bson_to_literal_node(const bsoncxx::document::element& elem) const;
 
