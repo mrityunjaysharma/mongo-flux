@@ -2,6 +2,22 @@
 
 Real-time MongoDB to ClickHouse replication with transparent analytics query routing. Makes ClickHouse behave as a "virtual secondary" — same write stream as replica set members, zero write overhead, 12-84x faster analytical reads.
 
+## Why: OLTP + OLAP in One Stack
+
+MongoDB excels at OLTP (transactional reads/writes — point lookups, single-document operations, low-latency CRUD). But it struggles with OLAP (analytical queries — aggregations over millions of rows, GROUP BY, time-range scans, percentiles). These workloads have fundamentally different storage and execution requirements:
+
+| | OLTP (MongoDB) | OLAP (ClickHouse) |
+|:--|:---------------|:-------------------|
+| Storage | Row-oriented (full documents) | Column-oriented (only needed columns scanned) |
+| Strength | Point lookups, writes, transactions | Aggregations, scans, GROUP BY |
+| Compression | ~2x | ~10-20x (columnar + codecs) |
+| Scan 1M rows | 500-1500 ms | 3-40 ms |
+| Typical query | `findById`, `insertOne` | `SELECT avg(amount) GROUP BY region` |
+
+The traditional solution is ETL pipelines (batch jobs that copy data to a warehouse). mg-clickhouse eliminates ETL entirely — it replicates in real-time via the oplog (same stream MongoDB secondaries consume) and routes queries transparently. Your application keeps using MongoDB for OLTP, and analytical reads automatically go to ClickHouse with a single URI parameter.
+
+**The result**: OLTP + OLAP from one MongoDB connection string. No ETL, no data staleness, no application changes.
+
 ## Architecture
 
 ```
