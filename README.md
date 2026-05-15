@@ -20,20 +20,18 @@ The traditional solution is ETL pipelines (batch jobs that copy data to a wareho
 
 ## Architecture
 
+```mermaid
+flowchart TD
+    APP[Your Application] -->|writes + OLTP reads| MGP[(MongoDB Primary)]
+    MGP -->|replication| MGS1[(Secondary 1)]
+    MGP -->|replication| MGS2[(Secondary 2)]
+    APP -->|"analytics reads (?clickhouse=true)"| MGC[mg-clickhouse]
+    MGP -->|"oplog (async)"| MGC
+    MGC -->|batch INSERT| CH[(ClickHouse)]
+    MGC -->|SQL| CH
 ```
-┌─────────────┐       ┌──────────────────┐       ┌────────────┐
-│  Application│──────▶│   mg-clickhouse   │──────▶│  MongoDB   │
-│  (Mongo URI)│       │   (proxy + sync)  │       │  (primary) │
-└─────────────┘       └────────┬─────────┘       └─────┬──────┘
-                               │                        │
-                               │ query translation      │ oplog tailing
-                               ▼                        │ (same as secondary)
-                        ┌────────────┐                  │
-                        │ ClickHouse │◀─────────────────┘
-                        │ (virtual   │   real-time CDC via
-                        │  secondary)│   local.oplog.rs
-                        └────────────┘
-```
+
+MongoDB runs as a 3-node replica set (`rs0`): 1 primary + 2 secondaries. mg-clickhouse tails the primary's oplog asynchronously (same stream the secondaries consume) and routes analytical queries to ClickHouse via query translation. The application writes to MongoDB unchanged; ClickHouse acts as a "virtual secondary" for OLAP workloads.
 
 ## Benchmark Results
 
@@ -81,7 +79,7 @@ Full results: [`benchmark/results.json`](benchmark/results.json), [`benchmark/wr
 docker compose up --build
 ```
 
-Starts MongoDB (replica set), ClickHouse, and mg-clickhouse. API at `http://localhost:9090`.
+Starts a 3-node MongoDB replica set (1 primary + 2 secondaries on ports 27017-27019), ClickHouse, and mg-clickhouse. The replica set initializes automatically. API at `http://localhost:9090`.
 
 ### Create a Mapping
 
@@ -176,7 +174,7 @@ curl -X POST http://localhost:9090/api/v1/mappings \
 
 ```yaml
 mongo:
-  uri: "mongodb://localhost:27017"
+  uri: "mongodb://mongo-primary:27017,mongo-secondary1:27017,mongo-secondary2:27017/?replicaSet=rs0"
   database: "myapp"
 
 clickhouse:
