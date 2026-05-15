@@ -42,9 +42,9 @@ Real-time MongoDB to ClickHouse replication with transparent analytics query rou
 
 | Metric | Standalone MongoDB | With mg-clickhouse | Overhead |
 |:-------|:-------------------|:-------------------|:---------|
-| Batch throughput | 28,639 docs/s | 31,858 docs/s | ~0% |
-| Single insert avg latency | 2.67 ms | 2.60 ms | ~0% |
-| Single insert P99 latency | 8.25 ms | 8.08 ms | ~0% |
+| [Batch throughput](benchmark/write_results.json#L7) | 28,639 docs/s | 31,858 docs/s | ~0% |
+| [Single insert avg latency](benchmark/write_results.json#L30) | 2.67 ms | 2.60 ms | ~0% |
+| [Single insert P99 latency](benchmark/write_results.json#L35) | 8.25 ms | 8.08 ms | ~0% |
 
 **Zero write overhead.** mg-clickhouse tails the oplog asynchronously — MongoDB acknowledges writes before the sync layer sees them.
 
