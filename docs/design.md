@@ -1,17 +1,28 @@
 # mg-clickhouse — Design Document
 
+**Version**: 1.1  
+**Last Updated**: 2026-05-15  
+**Status**: Production
+
 ## 1. Overview
 
-mg-clickhouse is a real-time CDC (Change Data Capture) bridge between MongoDB and ClickHouse. It replicates data from MongoDB to ClickHouse using the same oplog tailing mechanism that MongoDB secondaries use, and transparently routes analytical read queries to ClickHouse via MongoDB-compatible query translation.
+mg-clickhouse is a real-time CDC (Change Data Capture) bridge between MongoDB and ClickHouse. It replicates data using the same oplog tailing mechanism that MongoDB secondaries use, and transparently routes analytical reads to ClickHouse via an expression tree query translator.
 
 ### Design Goals
 
-- Zero write overhead on MongoDB (async oplog tailing, fully decoupled from write path)
+- Zero write overhead on MongoDB (async oplog tailing, fully decoupled)
 - Sub-second replication latency (same as MongoDB secondary nodes)
-- Transparent query routing (single URI parameter switches reads to ClickHouse)
-- Support both standalone and multi-shard ClickHouse deployments
+- Transparent query routing (single URI parameter)
+- Support standalone and multi-shard ClickHouse
 - Crash recovery with at-least-once delivery semantics
 - No application code changes required
+
+### Non-Goals
+
+- Full MongoDB wire protocol proxy (only find/aggregate translation)
+- Real-time delete propagation (uses ReplacingMergeTree deduplication)
+- Multi-tenant isolation within a single instance
+- Sub-millisecond replication (bounded by batch flush interval)
 
 ## 2. Architecture
 
@@ -23,15 +34,15 @@ graph TB
 
     subgraph mg-clickhouse
         PROXY[Mongo Proxy<br/>Query Router]
-        TRANSLATOR[Query Translator<br/>AST-based]
-        API[Management API<br/>REST]
+        TRANSLATOR[Query Translator<br/>AST Engine]
+        API[Management API<br/>REST :9090]
         OPLOG[Oplog Sync<br/>CDC Engine]
         CS[Change Stream Sync<br/>Atlas/Sharded]
         REGISTRY[Schema Mapping<br/>Registry]
     end
 
     subgraph Data Layer
-        MONGO[(MongoDB<br/>Primary)]
+        MONGO[(MongoDB<br/>Replica Set)]
         CH[(ClickHouse<br/>Standalone or Cluster)]
     end
 
@@ -45,9 +56,9 @@ graph TB
     OPLOG -->|batch INSERT| CH
     CS -->|batch INSERT| CH
     API -->|CRUD| REGISTRY
-    OPLOG -->|lookup| REGISTRY
-    CS -->|lookup| REGISTRY
-    TRANSLATOR -->|lookup| REGISTRY
+    OPLOG -.->|lookup| REGISTRY
+    CS -.->|lookup| REGISTRY
+    TRANSLATOR -.->|lookup| REGISTRY
 ```
 
 ## 3. Component Design
@@ -68,39 +79,45 @@ sequenceDiagram
         MG-->>OS: {op: "i", ns: "db.orders", o: {...}}
         OS->>REG: has_mapping("orders")?
         REG-->>OS: CollectionMapping
-        OS->>OS: Extract mapped fields → batch
+        OS->>OS: Extract mapped fields → batch buffer
         alt Batch full OR flush interval elapsed
             OS->>CH: INSERT INTO table VALUES (batch)
-            CH-->>OS: OK
-            OS->>OS: Save oplog timestamp to disk
+            alt Flush successful
+                CH-->>OS: 200 OK
+                OS->>OS: Clear batch + save oplog ts
+            else Flush failed
+                CH-->>OS: Error
+                OS->>OS: Retain batch for retry
+            end
         end
     end
 ```
 
 **Key design decisions:**
 
-- Oplog position saved AFTER successful flush (not before) to prevent data loss on crash
-- Failed batches retained in memory for retry on next flush cycle
+- Oplog position saved AFTER successful flush (prevents data loss on crash)
+- Failed batches retained in memory for retry (no data discarded)
 - Tailable-await cursor stays open indefinitely (same as secondary replication)
-- Batch size and flush interval are configurable for latency vs throughput tradeoff
+- Batch size and flush interval configurable (latency vs throughput tradeoff)
+- Reconnects with 3s backoff on cursor death or MongoDB failover
 
 ### 3.2 Query Translation (Expression Tree AST)
 
-Two-phase architecture separating parsing from SQL emission.
+Two-phase architecture separating parsing from SQL emission. Enables independent testing, tree-level optimizations, and multiple output targets.
 
 ```mermaid
 graph LR
-    subgraph Phase 1: Parse
-        BSON[BSON Document] --> PARSER[Parser]
+    subgraph "Phase 1: Parse (BSON → Tree)"
+        BSON[BSON Filter/Pipeline] --> PARSER[Parser]
         PARSER --> AST[ExprNode Tree]
     end
 
-    subgraph Phase 2: Emit
+    subgraph "Phase 2: Emit (Tree → SQL)"
         AST --> EMITTER[SQL Emitter]
         EMITTER --> SQL[ClickHouse SQL]
     end
 
-    style AST fill:#f9f,stroke:#333
+    style AST fill:#e8daef,stroke:#6c3483
 ```
 
 **AST Node Types:**
@@ -109,14 +126,14 @@ graph LR
 classDiagram
     class ExprNode {
         +ExprType type
-        +LiteralData literal
-        +ColumnRefData column_ref
-        +ComparisonData comparison
-        +LogicalData logical
-        +InListData in_list
-        +FunctionCallData function_call
-        +IsNullData is_null
-        +SelectExprData select_expr
+        +make_literal(value) ExprNodePtr
+        +make_column(name) ExprNodePtr
+        +make_comparison(op, left, right) ExprNodePtr
+        +make_logical(op, children) ExprNodePtr
+        +make_in(col, values, negate) ExprNodePtr
+        +make_function(name, args) ExprNodePtr
+        +make_is_null(col, negate) ExprNodePtr
+        +make_select_expr(expr, alias) ExprNodePtr
     }
 
     class QueryTree {
@@ -131,96 +148,132 @@ classDiagram
         +int64_t offset
     }
 
-    ExprNode --> ExprNode : children
-    QueryTree --> ExprNode : contains
+    ExprNode "1" --> "*" ExprNode : children
+    QueryTree "1" --> "*" ExprNode : contains
 ```
 
-**Translation examples:**
+**Translation coverage:**
 
-| MongoDB | ExprNode Tree | ClickHouse SQL |
-|:--------|:--------------|:---------------|
-| `{status: "shipped"}` | `Comparison(EQ, Column("status"), Literal("shipped"))` | `` `status` = 'shipped' `` |
-| `{amount: {$gt: 100, $lt: 500}}` | `Logical(AND, [Comp(GT, ...), Comp(LT, ...)])` | `` `amount` > 100 AND `amount` < 500 `` |
-| `{$or: [{a: 1}, {b: 2}]}` | `Logical(OR, [Comp(EQ, ...), Comp(EQ, ...)])` | `(a = 1) OR (b = 2)` |
+| MongoDB Operator | AST Node | ClickHouse SQL |
+|:-----------------|:---------|:---------------|
+| `{field: value}` | `Comparison(EQ)` | `` `field` = value `` |
+| `{$gt, $gte, $lt, $lte, $ne}` | `Comparison(GT/GTE/LT/LTE/NE)` | `>, >=, <, <=, !=` |
+| `{$in: [...]}` | `InList(negate=false)` | `IN (...)` |
+| `{$nin: [...]}` | `InList(negate=true)` | `NOT IN (...)` |
+| `{$and: [...]}` | `Logical(AND)` | `(...) AND (...)` |
+| `{$or: [...]}` | `Logical(OR)` | `(...) OR (...)` |
+| `{$nor: [...]}` | `Logical(NOT, Logical(OR))` | `NOT (... OR ...)` |
+| `{$exists: true/false}` | `IsNull(negate)` | `IS NOT NULL / IS NULL` |
+| `{$regex: "..."}` | `FunctionCall("match")` | `match(col, pattern)` |
+| `$group._id` | `ColumnRef` in group_by | `GROUP BY col` |
+| `$sum, $avg, $min, $max` | `FunctionCall` | `sum(), avg(), min(), max()` |
+| `$count` | `FunctionCall("count")` | `count(*)` |
 
 ### 3.3 Schema Mapping Registry
 
-Thread-safe in-memory registry with file persistence.
+Thread-safe in-memory registry with JSON file persistence. All access is mutex-protected.
 
 ```mermaid
 graph TD
-    subgraph Registry
-        MAP[HashMap<br/>collection → CollectionMapping]
-        MUTEX[std::mutex]
+    subgraph "Thread-Safe Registry"
+        MUTEX[std::mutex] --> MAP[unordered_map<br/>collection → CollectionMapping]
     end
 
     subgraph Persistence
-        FILE[mappings.json]
+        FILE[(mappings.json)]
     end
 
     subgraph Consumers
-        OPLOG[Oplog Sync]
-        TRANSLATOR[Query Translator]
-        API[Management API]
+        OPLOG[Oplog Sync<br/>has_mapping / get]
+        TRANSLATOR[Query Translator<br/>get]
+        API[Management API<br/>upsert / remove / get_all]
     end
 
-    API -->|upsert/remove| MAP
-    OPLOG -->|has_mapping/get| MAP
-    TRANSLATOR -->|get| MAP
-    MAP -->|save_to_file| FILE
-    FILE -->|load_from_file| MAP
-    MUTEX -->|guards| MAP
+    API -->|write| MAP
+    OPLOG -->|read| MAP
+    TRANSLATOR -->|read| MAP
+    MAP <-->|load/save| FILE
 ```
 
-### 3.4 Cluster Support (Standalone + Multi-Shard)
+**CollectionMapping fields:**
+
+```json
+{
+  "collection": "orders",
+  "clickhouse_database": "analytics",
+  "clickhouse_table": "orders",
+  "fields": [{"mongo_field": "_id", "ch_column": "id", "ch_type": "String"}],
+  "engine": "ReplacingMergeTree",
+  "order_by": ["created_at", "id"],
+  "cluster": "",
+  "sharding_key": "",
+  "enabled": true
+}
+```
+
+### 3.4 Cluster Support
 
 ```mermaid
 graph TB
-    subgraph Standalone Mode
-        S_MG[mg-clickhouse] -->|INSERT| S_CH[ClickHouse<br/>Single Node<br/>MergeTree]
+    subgraph "Standalone (cluster field empty)"
+        direction LR
+        S_MG[mg-clickhouse] -->|INSERT| S_CH[Single Node<br/>MergeTree]
     end
 
-    subgraph Clustered Mode
-        C_MG[mg-clickhouse] -->|INSERT| DIST[Distributed Table<br/>events]
-        DIST -->|route by shard key| SHARD1[Shard 1<br/>events_local]
-        DIST -->|route by shard key| SHARD2[Shard 2<br/>events_local]
-        DIST -->|route by shard key| SHARD3[Shard 3<br/>events_local]
+    subgraph "Clustered (cluster = 'prod')"
+        C_MG[mg-clickhouse] -->|INSERT| DIST[Distributed Table<br/>orders]
+        DIST -->|cityHash64 routing| SHARD1[Shard 1<br/>orders_local]
+        DIST -->|cityHash64 routing| SHARD2[Shard 2<br/>orders_local]
+        DIST -->|cityHash64 routing| SHARD3[Shard 3<br/>orders_local]
     end
 ```
 
-**DDL generation for clustered deployments:**
+**How it works:**
 
-```sql
--- Step 1: Local table on each shard (via ON CLUSTER distributed DDL)
-CREATE TABLE analytics.events_local ON CLUSTER 'prod-cluster' (
-    event_id String,
-    user_id String,
-    ts DateTime
-) ENGINE = ReplacingMergeTree()
-ORDER BY (ts, event_id);
+When `cluster` is set in a mapping, `generate_create_table_sql()` produces two DDL statements:
 
--- Step 2: Distributed table for routing
-CREATE TABLE analytics.events ON CLUSTER 'prod-cluster'
-AS analytics.events_local
-ENGINE = Distributed('prod-cluster', 'analytics', 'events_local', cityHash64(user_id));
-```
+1. A local MergeTree table (`_local` suffix) created `ON CLUSTER`
+2. A Distributed engine table (user-facing name) that routes inserts/queries across shards
+
+Inserts from the oplog sync go to the Distributed table. ClickHouse handles shard routing transparently based on the `sharding_key` expression.
 
 ### 3.5 Management API
 
 ```mermaid
 graph LR
-    CLIENT[HTTP Client] --> API[Management API :9090]
-    API --> MAPPINGS[/api/v1/mappings]
-    API --> STATUS[/api/v1/status]
-    API --> SYNC[/api/v1/sync/restart]
-    API --> HEALTH[/health]
-    API --> READY[/ready]
-
-    MAPPINGS --> REGISTRY[Schema Registry]
-    SYNC --> OPLOG[Oplog Sync]
-    SYNC --> CS[Change Stream Sync]
-    READY --> CH[ClickHouse Ping]
+    CLIENT[HTTP Client] --> API[":9090"]
+    API --> M1["GET /api/v1/mappings"]
+    API --> M2["POST /api/v1/mappings"]
+    API --> M3["DELETE /api/v1/mappings/:col"]
+    API --> M4["POST /api/v1/mappings/:col/sync"]
+    API --> S1["GET /api/v1/status"]
+    API --> S2["POST /api/v1/sync/restart"]
+    API --> H1["GET /health"]
+    API --> H2["GET /ready"]
 ```
+
+**Input validation on POST /mappings:**
+- `collection` must be non-empty
+- `clickhouse_table` must be non-empty
+- `fields` array must be non-empty
+- Each field must have non-empty `mongo_field`, `ch_column`, `ch_type`
+
+### 3.6 Configuration Validation
+
+Startup fails fast with clear error messages if:
+- Required fields missing (`mongo.uri`, `mongo.database`, `clickhouse.host`, `clickhouse.database`)
+- Port numbers out of range (1-65535)
+- `batch_size` out of range (1-1,000,000)
+- `flush_interval_ms` out of range (1-60,000)
+- `sync.mode` not one of `oplog` or `changestream`
+
+### 3.7 Security
+
+- ClickHouse credentials URL-encoded (prevents injection via `&`, `=`, `?` in passwords)
+- CURL handles wrapped in RAII (`CurlHandle` struct) — no leaks on exceptions
+- Container runs as non-root user `mgch`
+- Management API has no built-in auth — deploy behind API gateway or service mesh
+- Config file should use env var substitution for secrets in production
 
 ## 4. Data Flow
 
@@ -230,20 +283,20 @@ graph LR
 sequenceDiagram
     participant App as Application
     participant MG as MongoDB Primary
-    participant OL as Oplog (local.oplog.rs)
+    participant OL as Oplog
     participant MGC as mg-clickhouse
     participant CH as ClickHouse
 
-    App->>MG: insertOne({amount: 99.99, status: "new"})
+    App->>MG: insertOne({amount: 99.99})
     MG-->>App: acknowledged ✓
-    Note over App,MG: Write completes here.<br/>No mg-clickhouse in the path.
+    Note over App,MG: Write completes here.<br/>mg-clickhouse not in path.
 
     MG->>OL: Append oplog entry
-    Note over OL,MGC: Async (decoupled)
+    Note over OL,MGC: Async (fully decoupled)
     OL-->>MGC: Tailable cursor delivers entry
-    MGC->>MGC: Extract mapped fields, add to batch
+    MGC->>MGC: Extract fields → batch buffer
     MGC->>CH: INSERT INTO orders VALUES (batch)
-    MGC->>MGC: Persist oplog position
+    Note over MGC: Save oplog ts AFTER flush OK
 ```
 
 ### 4.2 Read Path (Query Routing)
@@ -251,206 +304,218 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant App as Application
-    participant MGC as mg-clickhouse Proxy
-    participant MG as MongoDB
+    participant MGC as mg-clickhouse
     participant QT as Query Translator
     participant CH as ClickHouse
 
     App->>MGC: find({status: "shipped"}, uri: "?clickhouse=true")
-    MGC->>MGC: Check URI param → route to ClickHouse
-    MGC->>QT: translate_find("orders", filter, projection, sort)
-    QT->>QT: Parse BSON → ExprNode tree
-    QT->>QT: Emit SQL from tree
-    QT-->>MGC: "SELECT ... FROM orders WHERE status = 'shipped'"
+    MGC->>QT: translate_find("orders", filter)
+    QT->>QT: BSON → ExprNode tree → SQL
+    QT-->>MGC: SELECT * FROM orders WHERE status = 'shipped'
     MGC->>CH: Execute SQL
     CH-->>MGC: JSON rows
-    MGC-->>App: BSON documents (MongoDB-compatible response)
+    MGC-->>App: BSON documents
 ```
 
-### 4.3 Crash Recovery
+### 4.3 Crash Recovery State Machine
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Running: Start
-    Running --> Flushing: Batch full OR interval elapsed
-    Flushing --> SavePosition: Flush successful
-    SavePosition --> Running: Position persisted
+    [*] --> Tailing: Start / Resume
+    Tailing --> Batching: Oplog entry received
+    Batching --> Tailing: Below batch threshold
+    Batching --> Flushing: Batch full OR interval elapsed
 
-    Flushing --> RetryPending: Flush failed
-    RetryPending --> Running: Keep rows for next cycle
+    Flushing --> PositionSaved: Flush OK
+    PositionSaved --> Tailing: Continue
 
-    Running --> Shutdown: SIGTERM/SIGINT
-    Shutdown --> FlushFinal: Flush pending batches
-    FlushFinal --> SaveFinal: Save final position
-    SaveFinal --> [*]: Exit
+    Flushing --> RetryPending: Flush FAILED
+    RetryPending --> Tailing: Rows kept, retry next cycle
 
-    note right of SavePosition
-        Position saved ONLY after
-        successful flush. Crash before
-        save → replay from last position
-        (at-least-once semantics)
-    end note
+    Tailing --> GracefulShutdown: SIGTERM
+    GracefulShutdown --> FinalFlush: Flush remaining
+    FinalFlush --> FinalSave: Save position
+    FinalSave --> [*]: Exit
 ```
 
-## 5. Configuration
+**Delivery guarantee**: At-least-once. On crash between flush and position save, the same entries replay on restart. `ReplacingMergeTree` deduplicates via the ORDER BY key.
 
-### 5.1 Standalone ClickHouse
+## 5. Performance
 
-```yaml
-clickhouse:
-  host: "clickhouse-node-1"
-  port: 8123
-  database: "analytics"
-  user: "default"
-  password: ""
-```
-
-### 5.2 Multi-Shard ClickHouse
-
-```yaml
-clickhouse:
-  host: "clickhouse-lb"       # Load balancer or any node
-  port: 8123
-  database: "analytics"
-  user: "default"
-  password: ""
-  cluster: "prod-cluster"     # Enables ON CLUSTER DDL
-```
-
-Per-mapping cluster override:
-
-```json
-{
-  "collection": "events",
-  "clickhouse_table": "events",
-  "clickhouse_database": "analytics",
-  "cluster": "prod-cluster",
-  "sharding_key": "cityHash64(user_id)",
-  "engine": "ReplacingMergeTree",
-  "order_by": ["ts", "event_id"]
-}
-```
-
-## 6. Performance Characteristics
-
-### 6.1 Read Performance (1M records)
+### 5.1 Read Performance Scaling
 
 ```mermaid
 xychart-beta
-    title "Query Latency: MongoDB vs ClickHouse (1M records)"
-    x-axis ["GROUP BY", "Avg by region", "Top 10", "Date range", "2-dim GROUP", "Full count"]
-    y-axis "Latency (ms)" 0 --> 1000
-    bar [506, 558, 855, 973, 628, 262]
-    bar [10, 9, 40, 16, 14, 3]
+    title "Read Speedup vs Data Size"
+    x-axis ["200K", "500K", "1M"]
+    y-axis "Average Speedup (x)" 0 --> 50
+    bar [12, 39, 40]
 ```
 
-| Metric | Value |
-|:-------|:------|
-| Average read speedup | 39.9x at 1M records |
-| Peak speedup | 84.1x (full table count) |
-| Scaling pattern | Superlinear (12x at 200K → 40x at 1M) |
+### 5.2 Standalone vs Distributed ClickHouse (500K records)
 
-### 6.2 Write Overhead
+```mermaid
+xychart-beta
+    title "Query Latency Comparison (500K records, ms)"
+    x-axis ["GROUP BY", "Avg region", "Top 10", "Filter", "Date scan", "Count", "Percentile", "uniqExact"]
+    y-axis "Latency (ms)" 0 --> 1400
+    bar [1329, 1351, 1077, 166, 1335, 404, 957, 1167]
+    bar [14, 24, 66, 24, 33, 9, 26, 73]
+    bar [36, 40, 108, 41, 70, 20, 65, 113]
+```
+
+| Query | MongoDB | Standalone CH | Distributed CH (3 shards) |
+|:------|:--------|:--------------|:--------------------------|
+| COUNT GROUP BY | 1,329 ms | 14 ms (95.8x) | 36 ms (37.2x) |
+| AVG by region | 1,352 ms | 24 ms (55.9x) | 40 ms (34.2x) |
+| Top 10 customers | 1,077 ms | 66 ms (16.3x) | 108 ms (10.0x) |
+| Multi-filter | 166 ms | 24 ms (7.0x) | 41 ms (4.1x) |
+| Date range scan | 1,335 ms | 34 ms (39.9x) | 70 ms (19.2x) |
+| Full table count | 404 ms | 9 ms (45.5x) | 20 ms (20.1x) |
+| Percentile + agg | 957 ms | 26 ms (36.6x) | 65 ms (14.8x) |
+| uniqExact | 1,167 ms | 73 ms (16.1x) | 113 ms (10.3x) |
+
+**Observations:**
+- Standalone: 39.1x average speedup over MongoDB
+- Distributed (3 shards): 18.7x average speedup over MongoDB
+- Distributed is 1.6-2.6x slower than standalone at 500K records due to cross-shard coordination overhead
+- Distributed advantage emerges at 10M+ rows per shard where parallel scan outweighs network cost
+
+### 5.3 Write Overhead
 
 | Metric | Standalone MongoDB | With mg-clickhouse | Overhead |
 |:-------|:-------------------|:-------------------|:---------|
 | Batch throughput | 28,639 docs/s | 31,858 docs/s | ~0% |
-| Single insert P50 | 2.50 ms | 2.43 ms | ~0% |
+| Single insert avg | 2.67 ms | 2.60 ms | ~0% |
 | Single insert P99 | 8.25 ms | 8.08 ms | ~0% |
 
-**Zero write overhead** — confirmed by benchmark. The oplog tailing is fully async.
+**Confirmed zero write overhead.** The oplog tailing is fully async and decoupled from the write acknowledgment path.
 
-## 7. Deployment Topology
+## 6. Deployment
 
-### 7.1 Single Node
+### 6.1 Single Node (Development)
 
 ```mermaid
 graph LR
     APP[App] --> MGC[mg-clickhouse]
-    MGC --> MG[(MongoDB<br/>Replica Set)]
-    MGC --> CH[(ClickHouse<br/>Single Node)]
+    MGC --> MG[(MongoDB RS)]
+    MGC --> CH[(ClickHouse)]
 ```
 
-### 7.2 Production (Multi-Shard)
+```bash
+docker compose up --build
+```
+
+### 6.2 Production (Multi-Shard)
 
 ```mermaid
 graph TB
-    subgraph Application Tier
-        APP1[App Instance 1]
-        APP2[App Instance 2]
+    subgraph "Application Tier"
+        APP1[App 1]
+        APP2[App 2]
     end
 
-    subgraph mg-clickhouse Tier
-        MGC1[mg-clickhouse<br/>Instance 1]
-        MGC2[mg-clickhouse<br/>Instance 2<br/>standby]
+    subgraph "mg-clickhouse (active/standby)"
+        MGC1[mg-clickhouse active]
+        MGC2[mg-clickhouse standby]
     end
 
-    subgraph MongoDB
+    subgraph "MongoDB Replica Set"
         PRIMARY[(Primary)]
         SEC1[(Secondary)]
         SEC2[(Secondary)]
     end
 
-    subgraph ClickHouse Cluster
+    subgraph "ClickHouse Cluster"
         LB[Load Balancer]
-        S1[Shard 1<br/>Replica 1 + 2]
-        S2[Shard 2<br/>Replica 1 + 2]
-        S3[Shard 3<br/>Replica 1 + 2]
+        S1[Shard 1<br/>2 replicas]
+        S2[Shard 2<br/>2 replicas]
+        S3[Shard 3<br/>2 replicas]
     end
 
-    APP1 --> PRIMARY
-    APP2 --> PRIMARY
+    APP1 & APP2 --> PRIMARY
     MGC1 -->|oplog tail| PRIMARY
     MGC1 -->|INSERT via Distributed| LB
-    LB --> S1
-    LB --> S2
-    LB --> S3
+    LB --> S1 & S2 & S3
+    MGC2 -.->|standby| PRIMARY
 ```
 
-## 8. Failure Modes & Recovery
+### 6.3 Kubernetes
 
-| Failure | Impact | Recovery |
-|:--------|:-------|:---------|
-| mg-clickhouse crash | Replication pauses | Restart resumes from last saved oplog position |
-| ClickHouse unavailable | Batches accumulate in memory | Retries on next flush cycle; oplog position not advanced |
-| MongoDB primary failover | Cursor dies | Reconnects with exponential backoff (3s base) |
-| Corrupted resume token | Cannot resume from exact position | Starts from current oplog tail (may miss events during downtime) |
-| Network partition (MG↔CH) | Flush failures | Rows retained in batch, retried until success |
+```yaml
+livenessProbe:
+  httpGet: { path: /health, port: 9090 }
+  initialDelaySeconds: 5
+  periodSeconds: 10
 
-## 9. Security Considerations
+readinessProbe:
+  httpGet: { path: /ready, port: 9090 }
+  initialDelaySeconds: 5
+  periodSeconds: 5
+```
 
-- Management API has no built-in authentication (deploy behind API gateway or service mesh)
-- ClickHouse credentials URL-encoded to prevent injection via special characters
-- CURL handles use RAII to prevent resource leaks
-- Container runs as non-root user (`mgch`)
-- Config supports environment variable substitution for secrets
-- Resume token files created with restrictive permissions
+Container: non-root `mgch`, `tini` PID 1, graceful shutdown on SIGTERM.
 
-## 10. Limitations & Future Work
+## 7. Failure Modes & Recovery
 
-**Current limitations:**
-- Single mg-clickhouse instance per MongoDB replica set (no HA leader election)
-- Partial updates (`$set`, `$inc`) not synced — only full document replacements
-- Delete operations not propagated (relies on ReplacingMergeTree versioning)
-- No backfill/initial sync — only captures changes from the point of deployment
+| Failure | Impact | Recovery | Data Loss |
+|:--------|:-------|:---------|:----------|
+| mg-clickhouse crash | Replication pauses | Resume from saved oplog position | None (at-least-once) |
+| ClickHouse down | Batches accumulate | Retry on next flush; position not advanced | None |
+| MongoDB failover | Cursor dies | Reconnect with 3s backoff | None |
+| Network partition (MG↔CH) | Flush failures | Rows retained, retried | None |
+| Corrupted resume token | Cannot resume exactly | Start from oplog tail | Possible gap during downtime |
+| OOM (unbounded batch) | Process killed | Resume from last position | Batch in flight lost, replayed |
 
-**Planned improvements:**
-- Leader election via MongoDB advisory locks for HA
-- Initial bulk sync from MongoDB to ClickHouse on first deployment
-- Partial update support via document re-fetch from MongoDB
-- Metrics export (Prometheus endpoint)
-- Rate limiting on management API
-- TLS support for management API
+## 8. Limitations & Roadmap
 
-## 11. Technology Stack
+| Current Limitation | Planned Solution | Priority |
+|:-------------------|:-----------------|:---------|
+| Single instance (no HA) | Leader election via MongoDB advisory locks | High |
+| No initial bulk sync | Full collection scan on first deploy | High |
+| Partial updates not synced | Document re-fetch from MongoDB | Medium |
+| No metrics export | Prometheus /metrics endpoint | Medium |
+| No API authentication | JWT or mTLS | Medium |
+| Deletes not propagated | Soft-delete column + TTL | Low |
+| No backpressure on batch growth | Memory-bounded queue with disk spill | Low |
+
+## 9. Technology Stack
 
 | Component | Technology | Rationale |
 |:----------|:-----------|:----------|
-| Language | C++17 | Low latency, zero-copy BSON handling |
-| MongoDB driver | mongocxx 3.9 | Official C++ driver with tailable cursor support |
-| ClickHouse protocol | HTTP (libcurl) | Universal compatibility, works with any ClickHouse deployment |
-| HTTP server | cpp-httplib | Header-only, lightweight, sufficient for management API |
-| Config | yaml-cpp | Human-readable, standard for infrastructure tools |
-| JSON | nlohmann/json | Header-only, industry standard for C++ |
-| Process manager | tini | Proper PID 1 signal handling in containers |
-| Container base | Ubuntu 22.04 | Stable, well-supported, small runtime image |
+| Language | C++17 | Low latency, zero-copy BSON, deterministic resource management |
+| MongoDB driver | mongocxx 3.9 | Official driver, tailable cursor support |
+| ClickHouse protocol | HTTP via libcurl | Universal compatibility, works with any deployment |
+| HTTP server | cpp-httplib 0.15 | Header-only, lightweight |
+| Config | yaml-cpp 0.8 | Human-readable, standard for infra tools |
+| JSON | nlohmann/json 3.11 | Header-only, industry standard |
+| Container | Ubuntu 22.04 + tini | Stable base, proper signal handling |
+| Build | CMake 3.16 + FetchContent | Reproducible builds, auto-fetches header-only deps |
+
+## 10. File Structure
+
+```
+mg-clickhouse/
+├── include/mg_clickhouse/
+│   ├── config.h              # Config structs + validation
+│   ├── schema_mapping.h      # Registry + DDL generation
+│   ├── expr_tree.h           # AST node types + emit_sql/emit_query
+│   ├── query_translator.h    # BSON → ExprTree → SQL
+│   ├── clickhouse_client.h   # HTTP client (RAII CURL)
+│   ├── oplog_sync.h          # Oplog CDC engine
+│   ├── change_stream_sync.h  # Change stream CDC
+│   ├── mongo_proxy.h         # Read routing
+│   ├── management_api.h      # REST API
+│   └── routing.h             # URI parsing
+├── src/                      # Implementations
+├── config/                   # Example YAML configs
+├── benchmark/                # Performance tools
+│   ├── read_benchmark.py
+│   ├── write_benchmark.py
+│   ├── distributed_benchmark.py
+│   └── docker-compose-cluster.yml
+├── docs/                     # Design documents
+├── CMakeLists.txt
+├── Dockerfile                # Multi-stage production image
+└── docker-compose.yml        # Dev stack (Mongo + CH + mg-clickhouse)
+```

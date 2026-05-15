@@ -103,7 +103,8 @@
 <body>
 
 <h1>mg-clickhouse — Design Document</h1>
-<p style="color:#666; margin-bottom: 2rem;">Real-time MongoDB to ClickHouse replication with transparent analytics query routing</p>
+<p style="color:#666; margin-bottom: 2rem;">Real-time MongoDB to ClickHouse replication with transparent analytics query routing<br/>
+<small>Version 1.1 | Last Updated: 2026-05-15 | Status: Production</small></p>
 
 <div class="toc">
     <strong>Table of Contents</strong>
@@ -397,17 +398,43 @@ xychart-beta
     bar [10, 9, 40, 16, 14, 3]
 </div>
 
+<h3>Standalone vs Distributed ClickHouse (500K records, 3 shards)</h3>
+
+<div class="mermaid">
+xychart-beta
+    title "MongoDB vs Standalone vs Distributed (500K records, ms)"
+    x-axis ["GROUP BY", "Avg region", "Top 10", "Filter", "Date scan", "Count", "Percentile", "uniqExact"]
+    y-axis "Latency (ms)" 0 --> 1400
+    bar [1329, 1351, 1077, 166, 1335, 404, 957, 1167]
+    bar [14, 24, 66, 24, 33, 9, 26, 73]
+    bar [36, 40, 108, 41, 70, 20, 65, 113]
+</div>
+
 <table>
-    <tr><th>Query</th><th>MongoDB (ms)</th><th>ClickHouse (ms)</th><th>Speedup</th></tr>
-    <tr><td>Count by status (GROUP BY)</td><td>506.5</td><td>10.9</td><td>46.7x</td></tr>
-    <tr><td>Avg amount by region</td><td>558.8</td><td>9.4</td><td>59.2x</td></tr>
-    <tr><td>Top 10 customers by spend</td><td>855.5</td><td>40.8</td><td>21.0x</td></tr>
-    <tr><td>Date range scan (3 months)</td><td>973.5</td><td>16.8</td><td>58.1x</td></tr>
-    <tr><td>2-dim GROUP BY</td><td>628.8</td><td>14.0</td><td>45.1x</td></tr>
-    <tr><td>Avg duration by type</td><td>685.5</td><td>9.0</td><td>76.5x</td></tr>
-    <tr><td>Full table count</td><td>262.3</td><td>3.1</td><td>84.1x</td></tr>
-    <tr><td>Percentile + multi-agg</td><td>659.4</td><td>11.9</td><td>55.4x</td></tr>
+    <tr><th>Query</th><th>MongoDB (ms)</th><th>Standalone CH (ms)</th><th>Distributed CH (ms)</th><th>S speedup</th><th>D speedup</th></tr>
+    <tr><td>COUNT GROUP BY</td><td>1,329</td><td>14</td><td>36</td><td>95.8x</td><td>37.2x</td></tr>
+    <tr><td>AVG by region</td><td>1,352</td><td>24</td><td>40</td><td>55.9x</td><td>34.2x</td></tr>
+    <tr><td>Top 10 customers</td><td>1,077</td><td>66</td><td>108</td><td>16.3x</td><td>10.0x</td></tr>
+    <tr><td>Multi-filter</td><td>166</td><td>24</td><td>41</td><td>7.0x</td><td>4.1x</td></tr>
+    <tr><td>Date range scan</td><td>1,335</td><td>34</td><td>70</td><td>39.9x</td><td>19.2x</td></tr>
+    <tr><td>Full table count</td><td>404</td><td>9</td><td>20</td><td>45.5x</td><td>20.1x</td></tr>
+    <tr><td>Percentile + agg</td><td>957</td><td>26</td><td>65</td><td>36.6x</td><td>14.8x</td></tr>
+    <tr><td>uniqExact</td><td>1,167</td><td>73</td><td>113</td><td>16.1x</td><td>10.3x</td></tr>
 </table>
+
+<div class="highlight">
+    <strong>Key insight:</strong> Distributed ClickHouse is 1.6-2.6x slower than standalone at 500K records due to cross-shard coordination overhead. The distributed advantage emerges at 10M+ rows per shard where parallel scan outweighs network cost. Both modes massively outperform MongoDB for analytical queries.
+</div>
+
+<h3>Scaling Pattern</h3>
+
+<div class="mermaid">
+xychart-beta
+    title "Average Read Speedup vs Data Size"
+    x-axis ["200K records", "500K records", "1M records"]
+    y-axis "Speedup (x)" 0 --> 50
+    bar [12, 39, 40]
+</div>
 
 <h3>Write Overhead (200K records)</h3>
 
@@ -459,12 +486,13 @@ graph TB
 <h2 id="failure">8. Failure Modes & Recovery</h2>
 
 <table>
-    <tr><th>Failure</th><th>Impact</th><th>Recovery</th></tr>
-    <tr><td>mg-clickhouse crash</td><td>Replication pauses</td><td>Restart resumes from last saved oplog position</td></tr>
-    <tr><td>ClickHouse unavailable</td><td>Batches accumulate in memory</td><td>Retries on next flush cycle; position not advanced</td></tr>
-    <tr><td>MongoDB failover</td><td>Cursor dies</td><td>Reconnects with 3s backoff</td></tr>
-    <tr><td>Network partition</td><td>Flush failures</td><td>Rows retained, retried until success</td></tr>
-    <tr><td>Corrupted resume token</td><td>Cannot resume exactly</td><td>Starts from current oplog tail</td></tr>
+    <tr><th>Failure</th><th>Impact</th><th>Recovery</th><th>Data Loss</th></tr>
+    <tr><td>mg-clickhouse crash</td><td>Replication pauses</td><td>Resume from saved oplog position</td><td>None (at-least-once)</td></tr>
+    <tr><td>ClickHouse unavailable</td><td>Batches accumulate in memory</td><td>Retries on next flush cycle; position not advanced</td><td>None</td></tr>
+    <tr><td>MongoDB failover</td><td>Cursor dies</td><td>Reconnects with 3s backoff</td><td>None</td></tr>
+    <tr><td>Network partition</td><td>Flush failures</td><td>Rows retained, retried until success</td><td>None</td></tr>
+    <tr><td>Corrupted resume token</td><td>Cannot resume exactly</td><td>Starts from current oplog tail</td><td>Possible gap during downtime</td></tr>
+    <tr><td>OOM (unbounded batch)</td><td>Process killed</td><td>Resume from last saved position</td><td>In-flight batch lost, replayed</td></tr>
 </table>
 
 <h2 id="security">9. Security</h2>
@@ -480,13 +508,14 @@ graph TB
 <h2 id="limitations">10. Limitations & Future Work</h2>
 
 <table>
-    <tr><th>Current Limitation</th><th>Planned Solution</th></tr>
-    <tr><td>Single instance (no HA)</td><td>Leader election via MongoDB advisory locks</td></tr>
-    <tr><td>No initial bulk sync</td><td>Full collection scan on first deployment</td></tr>
-    <tr><td>Partial updates not synced</td><td>Document re-fetch from MongoDB on $set/$inc</td></tr>
-    <tr><td>No metrics export</td><td>Prometheus /metrics endpoint</td></tr>
-    <tr><td>No API authentication</td><td>JWT or mTLS support</td></tr>
-    <tr><td>Deletes not propagated</td><td>Soft-delete column + TTL</td></tr>
+    <tr><th>Current Limitation</th><th>Planned Solution</th><th>Priority</th></tr>
+    <tr><td>Single instance (no HA)</td><td>Leader election via MongoDB advisory locks</td><td>High</td></tr>
+    <tr><td>No initial bulk sync</td><td>Full collection scan on first deployment</td><td>High</td></tr>
+    <tr><td>Partial updates not synced</td><td>Document re-fetch from MongoDB on $set/$inc</td><td>Medium</td></tr>
+    <tr><td>No metrics export</td><td>Prometheus /metrics endpoint</td><td>Medium</td></tr>
+    <tr><td>No API authentication</td><td>JWT or mTLS support</td><td>Medium</td></tr>
+    <tr><td>Deletes not propagated</td><td>Soft-delete column + TTL</td><td>Low</td></tr>
+    <tr><td>No backpressure on batch growth</td><td>Memory-bounded queue with disk spill</td><td>Low</td></tr>
 </table>
 
 <h2>11. Technology Stack</h2>
