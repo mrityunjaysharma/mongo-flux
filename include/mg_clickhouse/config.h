@@ -24,6 +24,9 @@ struct SyncConfig {
     int batch_size = 1000;
     int flush_interval_ms = 500;
     std::string resume_token_path = "/var/lib/mg-clickhouse/resume_tokens";
+    int max_pending_rows = 100000;       // Backpressure: max rows buffered before blocking
+    bool propagate_deletes = false;      // Insert tombstone rows on delete operations
+    std::string delete_column = "_deleted"; // Column name for soft-delete flag
 };
 
 struct ApiConfig {

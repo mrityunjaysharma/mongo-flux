@@ -35,6 +35,9 @@ Config load_config(const std::string& path) {
         if (sync["batch_size"]) config.sync.batch_size = sync["batch_size"].as<int>();
         if (sync["flush_interval_ms"]) config.sync.flush_interval_ms = sync["flush_interval_ms"].as<int>();
         if (sync["resume_token_path"]) config.sync.resume_token_path = sync["resume_token_path"].as<std::string>();
+        if (sync["max_pending_rows"]) config.sync.max_pending_rows = sync["max_pending_rows"].as<int>();
+        if (sync["propagate_deletes"]) config.sync.propagate_deletes = sync["propagate_deletes"].as<bool>();
+        if (sync["delete_column"]) config.sync.delete_column = sync["delete_column"].as<std::string>();
     }
 
     if (auto api = root["api"]) {
@@ -77,6 +80,9 @@ Config load_config(const std::string& path) {
     }
     if (config.sync.flush_interval_ms <= 0 || config.sync.flush_interval_ms > 60000) {
         throw std::runtime_error("Config validation: sync.flush_interval_ms must be 1-60000");
+    }
+    if (config.sync.max_pending_rows <= 0 || config.sync.max_pending_rows > 10000000) {
+        throw std::runtime_error("Config validation: sync.max_pending_rows must be 1-10000000");
     }
 
     // Validate sync mode

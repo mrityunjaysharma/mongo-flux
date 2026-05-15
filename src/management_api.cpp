@@ -3,6 +3,7 @@
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 #include <iostream>
+#include "mg_clickhouse/metrics.h"
 
 namespace mg_clickhouse {
 
@@ -237,6 +238,11 @@ void ManagementApi::run() {
             res.status = 503;
             res.set_content(R"({"status":"not_ready","reason":"clickhouse_unavailable"})", "application/json");
         }
+    });
+
+    // GET /metrics - Prometheus metrics endpoint
+    svr.Get("/metrics", [](const httplib::Request&, httplib::Response& res) {
+        res.set_content(Metrics::instance().render(), "text/plain; version=0.0.4");
     });
 
     std::cout << "[mg-clickhouse] Management API listening on "

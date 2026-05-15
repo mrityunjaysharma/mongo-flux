@@ -1,6 +1,7 @@
 #include "mg_clickhouse/oplog_sync.h"
 #include "mg_clickhouse/clickhouse_client.h"
 #include "mg_clickhouse/bson_utils.h"
+#include "mg_clickhouse/metrics.h"
 
 #include <chrono>
 #include <fstream>
@@ -79,13 +80,17 @@ void OplogSync::tail_oplog() {
     // Retry connection loop — wait for MongoDB to become available
     while (running_.load()) {
         try {
+            Metrics::instance().set_sync_running(true);
             tail_oplog_inner();
         } catch (const std::exception& e) {
             std::cerr << "[mg-clickhouse/oplog] Connection failed: " << e.what()
                       << ". Retrying in 3s..." << std::endl;
+            Metrics::instance().inc_oplog_reconnects();
+            Metrics::instance().set_sync_running(false);
             std::this_thread::sleep_for(std::chrono::seconds(3));
         }
     }
+    Metrics::instance().set_sync_running(false);
 }
 
 void OplogSync::tail_oplog_inner() {
@@ -162,6 +167,8 @@ void OplogSync::tail_oplog_inner() {
 
     auto flush_all = [&]() {
         bool all_flushed = true;
+        auto flush_start = std::chrono::steady_clock::now();
+
         for (auto& [collection, batch] : pending) {
             if (batch.rows.empty()) continue;
 
@@ -180,21 +187,32 @@ void OplogSync::tail_oplog_inner() {
                     columns,
                     ch_rows);
 
-                // Only clear batch on successful flush
+                Metrics::instance().inc_rows_synced(collection, batch.rows.size());
+                Metrics::instance().inc_flush_success();
                 batch.rows.clear();
                 batch.last_flush = std::chrono::steady_clock::now();
             } catch (const std::exception& e) {
                 std::cerr << "[mg-clickhouse/oplog] Flush failed for "
                           << collection << " (" << batch.rows.size() << " rows): "
                           << e.what() << std::endl;
+                Metrics::instance().inc_flush_failure();
                 all_flushed = false;
             }
         }
+
+        auto flush_duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - flush_start).count();
+        Metrics::instance().set_last_flush_duration_ms(flush_duration);
 
         // Only persist oplog position after ALL batches flushed successfully
         if (all_flushed && last_processed_ts.timestamp > 0) {
             save_oplog_timestamp(last_processed_ts);
         }
+
+        // Update pending rows gauge
+        int64_t total_pending = 0;
+        for (const auto& [_, b] : pending) total_pending += b.rows.size();
+        Metrics::instance().set_pending_rows(total_pending);
     };
 
     // Main tailing loop — mirrors what mongod does internally for replication
@@ -265,7 +283,40 @@ void OplogSync::tail_oplog_inner() {
             }
             // Partial updates: skip (ReplacingMergeTree handles via periodic full-sync)
         }
-        // op == "d" (delete) — handled by ReplacingMergeTree version column
+        // op == "d" (delete) — propagate as tombstone if configured
+        else if (op == "d" && config_.sync.propagate_deletes) {
+            auto o_elem = entry["o"];
+            if (!o_elem || o_elem.type() != bsoncxx::type::k_document) continue;
+            auto doc = o_elem.get_document().value;
+
+            // Extract the _id from the delete operation and create a tombstone row
+            nlohmann::json row;
+            for (const auto& field_map : mapping.fields) {
+                if (field_map.mongo_field == "_id") {
+                    auto elem = doc["_id"];
+                    if (elem) {
+                        if (elem.type() == bsoncxx::type::k_oid)
+                            row[field_map.ch_column] = elem.get_oid().value.to_string();
+                        else if (elem.type() == bsoncxx::type::k_string)
+                            row[field_map.ch_column] = std::string(elem.get_string().value);
+                    }
+                } else {
+                    row[field_map.ch_column] = nullptr;
+                }
+            }
+            // Mark as deleted via the configured delete column
+            row[config_.sync.delete_column] = 1;
+            pending[collection].rows.push_back(std::move(row));
+        }
+
+        Metrics::instance().inc_oplog_entries_processed();
+
+        // Backpressure: if pending rows exceed limit, force flush before accepting more
+        int64_t total_pending = 0;
+        for (const auto& [_, b] : pending) total_pending += b.rows.size();
+        if (total_pending >= config_.sync.max_pending_rows) {
+            flush_all();
+        }
 
         // Flush if batch is full
         for (auto& [coll, batch] : pending) {
