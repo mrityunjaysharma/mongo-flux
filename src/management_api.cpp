@@ -133,7 +133,7 @@ void ManagementApi::run() {
                 ch_client_->create_table(ddl);
 
                 // Restart sync for this collection
-                sync_->restart_collection(collection);
+                cs_sync_->restart_collection(collection);
 
                 nlohmann::json response = {
                     {"status", "synced"},

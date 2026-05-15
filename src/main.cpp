@@ -85,7 +85,7 @@ int main(int argc, char* argv[]) {
     auto proxy = std::make_shared<mg_clickhouse::MongoProxy>(config, registry, ch_client, translator);
 
     // Management API (uses change_stream_sync for the restart endpoint)
-    auto api = std::make_shared<mg_clickhouse::ManagementApi>(config.api, registry, ch_client, cs_sync);
+    auto api = std::make_shared<mg_clickhouse::ManagementApi>(config.api, registry, ch_client, cs_sync, oplog_sync);
 
     // Set up signal handlers
     std::signal(SIGINT, signal_handler);

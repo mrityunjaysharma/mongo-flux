@@ -49,6 +49,7 @@ set(MG_CLICKHOUSE_SOURCES
     src/schema_mapping.cpp
     src/oplog_sync.cpp
     src/change_stream_sync.cpp
+    src/expr_tree.cpp
     src/query_translator.cpp
     src/clickhouse_client.cpp
     src/mongo_proxy.cpp
