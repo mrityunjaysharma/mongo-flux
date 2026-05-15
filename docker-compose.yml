@@ -1,0 +1,59 @@
+services:
+  mongodb:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    command: ["--replSet", "rs0"]
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  mongo-init-replica:
+    image: mongo:7
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    entrypoint: >
+      bash -c "
+        mongosh --host mongodb:27017 --eval 'rs.initiate({_id: \"rs0\", members: [{_id: 0, host: \"mongodb:27017\"}]})' || true
+      "
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - ch_data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  mg-clickhouse:
+    build: .
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      mongo-init-replica:
+        condition: service_completed_successfully
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/mg-clickhouse-docker.yaml:/etc/mg-clickhouse/mg-clickhouse.yaml
+      - mg_ch_data:/var/lib/mg-clickhouse
+    restart: on-failure
+
+volumes:
+  mongo_data:
+  ch_data:
+  mg_ch_data:

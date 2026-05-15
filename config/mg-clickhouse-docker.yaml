@@ -1,0 +1,28 @@
+# mg-clickhouse configuration for Docker Compose
+mongo:
+  uri: "mongodb://mongodb:27017/?directConnection=true"
+  database: "myapp"
+
+clickhouse:
+  host: "clickhouse"
+  port: 8123
+  database: "analytics"
+  user: "default"
+  password: ""
+
+sync:
+  mode: "oplog"
+  batch_size: 1000
+  flush_interval_ms: 500
+  resume_token_path: "/var/lib/mg-clickhouse/resume_tokens"
+
+api:
+  port: 9090
+  bind: "0.0.0.0"
+
+routing:
+  clickhouse_param: "clickhouse"
+
+logging:
+  level: "info"
+  file: ""
