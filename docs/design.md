@@ -12,19 +12,19 @@ mg-clickhouse replicates MongoDB to ClickHouse in real-time using oplog tailing 
 
 ## 2. Architecture
 
-MongoDB runs as a 3-node replica set (1 primary + 2 secondaries). mg-clickhouse tails the oplog from the primary and automatically reconnects to the new primary after a failover election.
+MongoDB runs as a 3-node replica set (1 primary + 2 secondaries). For reads, the application connects to mg-clickhouse which acts as a routing proxy. If the connection URI contains `?clickhouse=true`, mg-clickhouse translates the query to SQL and sends it to ClickHouse. If the parameter is absent or false, mg-clickhouse forwards the query to MongoDB Primary unchanged. Writes go directly to the primary.
 
 ```mermaid
 flowchart TD
     APP[Application] -->|writes| MGP[(MongoDB Primary)]
     MGP -->|replication| MGS1[(MongoDB Secondary 1)]
     MGP -->|replication| MGS2[(MongoDB Secondary 2)]
+    APP -->|"all reads (find/aggregate)"| ROUTER[mg-clickhouse<br/>Query Router]
+    ROUTER -->|"?clickhouse=true → translate"| XLAT[Query Translator<br/>BSON → AST → SQL]
+    XLAT -->|SELECT| CH[(ClickHouse)]
+    ROUTER -->|"no flag → forward"| MGP
     MGP -->|oplog.rs| SYNC[Oplog / CS Sync]
-    SYNC -->|batch INSERT| CH[(ClickHouse)]
-    APP -->|"reads ?clickhouse=true"| ROUTER[Query Router]
-    ROUTER -->|translate| XLAT[Query Translator<br/>BSON → AST → SQL]
-    XLAT -->|SELECT| CH
-    ROUTER -->|standard reads| MGP
+    SYNC -->|batch INSERT| CH
     SYNC -.->|lookup| REG[Schema Registry]
     XLAT -.->|lookup| REG
 ```
@@ -56,12 +56,21 @@ sequenceDiagram
 
 ### Reads (query routing)
 
+The application sends all reads to mg-clickhouse. mg-clickhouse inspects the URI for `?clickhouse=true`. If present, it translates the query to SQL and executes on ClickHouse. If absent or false, it forwards the query to MongoDB Primary unchanged.
+
 ```mermaid
 sequenceDiagram
     App->>mg-clickhouse: find({status:"shipped"}, ?clickhouse=true)
     mg-clickhouse->>mg-clickhouse: BSON → AST → SQL
     mg-clickhouse->>ClickHouse: SELECT * WHERE status='shipped'
     ClickHouse-->>App: results
+```
+
+```mermaid
+sequenceDiagram
+    App->>mg-clickhouse: find({_id: "abc123"}) [no clickhouse param]
+    mg-clickhouse->>MongoDB Primary: forward query unchanged
+    MongoDB Primary-->>App: results
 ```
 
 ## 4. Components

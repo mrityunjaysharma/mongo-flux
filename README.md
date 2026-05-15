@@ -25,13 +25,14 @@ flowchart TD
     APP[Your Application] -->|writes + OLTP reads| MGP[(MongoDB Primary)]
     MGP -->|replication| MGS1[(Secondary 1)]
     MGP -->|replication| MGS2[(Secondary 2)]
-    APP -->|"analytics reads (?clickhouse=true)"| MGC[mg-clickhouse]
+    APP -->|"all reads (find/aggregate)"| MGC[mg-clickhouse]
+    MGC -->|"?clickhouse=true → SQL"| CH[(ClickHouse)]
+    MGC -->|"no flag → forward to MongoDB"| MGP
     MGP -->|"oplog (async)"| MGC
-    MGC -->|batch INSERT| CH[(ClickHouse)]
-    MGC -->|SQL| CH
+    MGC -->|batch INSERT| CH
 ```
 
-MongoDB runs as a 3-node replica set (`rs0`): 1 primary + 2 secondaries. mg-clickhouse tails the primary's oplog asynchronously (same stream the secondaries consume) and routes analytical queries to ClickHouse via query translation. The application writes to MongoDB unchanged; ClickHouse acts as a "virtual secondary" for OLAP workloads.
+MongoDB runs as a 3-node replica set (`rs0`): 1 primary + 2 secondaries. For reads, the application connects to mg-clickhouse which acts as a routing proxy. If the connection URI contains `?clickhouse=true`, mg-clickhouse translates the query to SQL and sends it to ClickHouse. If the parameter is absent or false, mg-clickhouse forwards the query to MongoDB Primary unchanged. Writes always go directly to the primary. Separately, mg-clickhouse tails the primary's oplog to replicate data into ClickHouse in real-time.
 
 ## Benchmark Results
 
@@ -67,9 +68,11 @@ Full results: [`benchmark/results.json`](benchmark/results.json), [`benchmark/wr
 
 **Replication**: Opens a tailable-await cursor on `local.oplog.rs` (same mechanism MongoDB secondaries use), extracts mapped fields, batches them, and flushes to ClickHouse via HTTP INSERT. Persists oplog timestamps for crash recovery.
 
-**Write path**: All writes go to MongoDB primary unchanged. No application code changes needed.
+**Write path**: All writes go directly to MongoDB Primary. No proxy, no application code changes needed.
 
-**Read path**: Standard URI reads from MongoDB. Add `?clickhouse=true` to route reads through the query translator to ClickHouse.
+**Read path**: The application sends reads to mg-clickhouse (proxy). mg-clickhouse inspects the connection URI:
+- `?clickhouse=true` (or `1` / `yes`) → translates the query to SQL, executes on ClickHouse, returns results
+- Parameter absent or `false` → forwards the query to MongoDB Primary unchanged
 
 **Query translation**: Two-phase AST approach — BSON is parsed into an expression tree, then emitted as ClickHouse SQL. Supports `find()`, `aggregate()` with `$match`, `$group`, `$sort`, `$limit`, `$project`, `$count`, and filter operators (`$gt`, `$in`, `$regex`, `$and`/`$or`, etc.).
 

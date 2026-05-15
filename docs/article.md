@@ -28,21 +28,21 @@ MongoDB replica sets work by having secondary nodes tail the primary's oplog (`l
 
 mg-clickhouse does exactly the same thing. It opens a tailable-await cursor on the oplog and applies operations to ClickHouse instead of a local MongoDB storage engine. From MongoDB's perspective, it's just another consumer of the write stream.
 
-The default deployment runs a 3-node MongoDB replica set: 1 primary and 2 secondaries. mg-clickhouse connects using the full replica set URI (`mongodb://primary:27017,secondary1:27017,secondary2:27017/?replicaSet=rs0`) and automatically follows primary elections during failover.
+The default deployment runs a 3-node MongoDB replica set: 1 primary and 2 secondaries. For reads, the application connects to mg-clickhouse which acts as a routing proxy. mg-clickhouse inspects the connection URI — if `?clickhouse=true` is present, it translates the query to SQL and executes on ClickHouse. If the parameter is absent or false, it forwards the query to MongoDB Primary unchanged.
 
 ```mermaid
 flowchart TD
     APP[Your Application] -->|writes + OLTP reads| MGP[(MongoDB Primary)]
     MGP -->|replication| MGS1[(Secondary 1)]
     MGP -->|replication| MGS2[(Secondary 2)]
-    MGP -->|oplog stream| MGC[mg-clickhouse]
-    MGC -->|batch INSERT| CH[(ClickHouse)]
-    APP -->|"analytics reads (?clickhouse=true)"| MGC
-    MGC -->|SQL query| CH
-    CH -->|results| APP
+    APP -->|"all reads (find/aggregate)"| MGC[mg-clickhouse]
+    MGC -->|"?clickhouse=true → SQL"| CH[(ClickHouse)]
+    MGC -->|"no flag → forward"| MGP
+    MGP -->|"oplog (async)"| MGC
+    MGC -->|batch INSERT| CH
 ```
 
-The key insight: writes go to the MongoDB primary unchanged (zero overhead), the two secondaries provide high availability, and analytical reads are transparently routed to ClickHouse by adding a single URI parameter.
+The key insight: writes go to the MongoDB primary unchanged (zero overhead), the two secondaries provide high availability, and mg-clickhouse transparently routes reads — analytics to ClickHouse, everything else to MongoDB.
 
 ---
 
@@ -250,6 +250,7 @@ flowchart TD
     subgraph "mg-clickhouse"
         SYNC[Oplog Sync Engine]
         XLAT[Query Translator<br/>40+ expressions]
+        ROUTE[Query Router]
         API[Management API<br/>+ Prometheus /metrics]
         REG[Schema Registry]
     end
@@ -259,7 +260,9 @@ flowchart TD
     end
 
     APP -->|writes| MGP
-    APP -->|"reads ?clickhouse=true"| XLAT
+    APP -->|"all reads"| ROUTE
+    ROUTE -->|"?clickhouse=true"| XLAT
+    ROUTE -->|"no flag → forward"| MGP
     MGP -->|oplog| SYNC
     SYNC -->|INSERT| CH
     XLAT -->|SQL| CH

@@ -91,21 +91,22 @@
 
 <p>MongoDB replica sets work by having secondary nodes tail the primary's oplog — a capped collection recording every write. mg-clickhouse does exactly the same thing, but applies operations to ClickHouse instead of a local storage engine.</p>
 
-<p>The default deployment runs a 3-node MongoDB replica set: 1 primary and 2 secondaries. mg-clickhouse connects using the full replica set URI and automatically follows primary elections during failover.</p>
+<p>The default deployment runs a 3-node MongoDB replica set: 1 primary and 2 secondaries. For reads, the application connects to mg-clickhouse which acts as a routing proxy — if <code>?clickhouse=true</code> is in the URI, the query goes to ClickHouse. Otherwise, it's forwarded to MongoDB Primary unchanged.</p>
 
 <div class="mermaid">
 flowchart TD
-    APP[Your Application] -->|writes + OLTP reads| MGP[(MongoDB Primary)]
+    APP[Your Application] -->|writes| MGP[(MongoDB Primary)]
     MGP -->|replication| MGS1[(Secondary 1)]
     MGP -->|replication| MGS2[(Secondary 2)]
-    MGP -->|"oplog (async)"| MGC[mg-clickhouse]
-    MGC -->|batch INSERT| CH[(ClickHouse)]
-    APP -->|"analytics reads (?clickhouse=true)"| MGC
-    MGC -->|SQL| CH
+    APP -->|"all reads"| MGC[mg-clickhouse]
+    MGC -->|"?clickhouse=true → SQL"| CH[(ClickHouse)]
+    MGC -->|"no flag → forward"| MGP
+    MGP -->|"oplog (async)"| MGC
+    MGC -->|batch INSERT| CH
 </div>
 
 <div class="highlight">
-    <strong>Key insight:</strong> Writes go to the MongoDB primary unchanged (zero overhead). The two secondaries provide high availability. Analytical reads are transparently routed to ClickHouse by adding <code>?clickhouse=true</code> to your connection URI. No application code changes.
+    <strong>Key insight:</strong> Writes go to the MongoDB primary unchanged (zero overhead). The two secondaries provide HA. mg-clickhouse routes reads — analytics queries to ClickHouse, everything else forwarded to MongoDB. Add <code>?clickhouse=true</code> to your connection URI. No application code changes.
 </div>
 
 <hr class="separator">
