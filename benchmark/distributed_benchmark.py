@@ -139,12 +139,12 @@ def load_distributed(records):
                 region LowCardinality(String),
                 created_at DateTime
             ) ENGINE = MergeTree()
-            ORDER BY (region, created_at)
+            ORDER BY (region, status, created_at)
         """)
         ch_query(url, f"""
             CREATE TABLE {CH_DISTRIBUTED_DB}.orders
             AS {CH_DISTRIBUTED_DB}.orders_local
-            ENGINE = Distributed('{CH_CLUSTER_NAME}', '{CH_DISTRIBUTED_DB}', 'orders_local', cityHash64(customer_id))
+            ENGINE = Distributed('{CH_CLUSTER_NAME}', '{CH_DISTRIBUTED_DB}', 'orders_local', cityHash64(region))
         """)
 
     # Insert via distributed table on shard1 (auto-routes to all shards)
@@ -188,7 +188,7 @@ QUERIES = [
         "sql": "SELECT customer_id, sum(amount) as total FROM {db}.orders GROUP BY customer_id ORDER BY total DESC LIMIT 10 FORMAT Null",
     },
     {
-        "name": "Multi-filter compound",
+        "name": "Single-region filter (shard-local)",
         "mongo": lambda db: list(db.orders.find({
             "region": "us-east",
             "status": {"$in": ["shipped", "delivered"]},
@@ -197,7 +197,15 @@ QUERIES = [
         "sql": "SELECT * FROM {db}.orders WHERE region = 'us-east' AND status IN ('shipped', 'delivered') AND amount >= 100 AND amount <= 2000 FORMAT Null",
     },
     {
-        "name": "Date range scan (3 months)",
+        "name": "Single-region aggregation (shard-local)",
+        "mongo": lambda db: list(db.orders.aggregate([
+            {"$match": {"region": "eu-west"}},
+            {"$group": {"_id": "$status", "total": {"$sum": "$amount"}, "count": {"$sum": 1}}}
+        ])),
+        "sql": "SELECT status, sum(amount) as total, count() as cnt FROM {db}.orders WHERE region = 'eu-west' GROUP BY status FORMAT Null",
+    },
+    {
+        "name": "Date range scan (3 months, all shards)",
         "mongo": lambda db: list(db.orders.find({
             "created_at": {"$gte": "2023-04-01 00:00:00", "$lt": "2023-07-01 00:00:00"}
         })),
