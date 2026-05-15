@@ -1,0 +1,126 @@
+{
+  "timestamp": "2026-05-15T19:57:00.800594",
+  "records": 500000,
+  "results": [
+    {
+      "query": "1. Count by status",
+      "mongo_avg_ms": 313.0746039969381,
+      "ch_avg_ms": 8.163256000261754,
+      "speedup": 38.351682709313465
+    },
+    {
+      "query": "2. Revenue by region",
+      "mongo_avg_ms": 281.03950360091403,
+      "ch_avg_ms": 9.683305796352215,
+      "speedup": 29.023094954492095
+    },
+    {
+      "query": "3. Avg order value by category",
+      "mongo_avg_ms": 331.7975896032294,
+      "ch_avg_ms": 9.046266600489616,
+      "speedup": 36.67784780798649
+    },
+    {
+      "query": "4. Top 10 customers by spend",
+      "mongo_avg_ms": 519.4547644001432,
+      "ch_avg_ms": 33.717494003940374,
+      "speedup": 15.406090510149937
+    },
+    {
+      "query": "5. Monthly revenue trend",
+      "mongo_avg_ms": 335.41302180383354,
+      "ch_avg_ms": 11.321363999741152,
+      "speedup": 29.626555758785102
+    },
+    {
+      "query": "6. Revenue by region + category (2D)",
+      "mongo_avg_ms": 365.19071579677984,
+      "ch_avg_ms": 12.457201795768924,
+      "speedup": 29.31562976854212
+    },
+    {
+      "query": "7. Avg rating by category + status",
+      "mongo_avg_ms": 398.24416400515474,
+      "ch_avg_ms": 16.32449979952071,
+      "speedup": 24.39548953388742
+    },
+    {
+      "query": "8. Filter + aggregate (shipped, amount > 100)",
+      "mongo_avg_ms": 286.8990046030376,
+      "ch_avg_ms": 10.303493397077546,
+      "speedup": 27.844828306913154
+    },
+    {
+      "query": "9. Date range + group (2023 Q1)",
+      "mongo_avg_ms": 174.5881507958984,
+      "ch_avg_ms": 10.315965401241556,
+      "speedup": 16.924072930187048
+    },
+    {
+      "query": "10. Unique customers per region",
+      "mongo_avg_ms": 432.8978729987284,
+      "ch_avg_ms": 30.450454601668753,
+      "speedup": 14.216466672225138
+    },
+    {
+      "query": "11. Percentiles (p50, p90, p99 of amount)",
+      "mongo_avg_ms": 312.0726694003679,
+      "ch_avg_ms": 14.083751398720779,
+      "speedup": 22.158348338121996
+    },
+    {
+      "query": "12. Payment method distribution",
+      "mongo_avg_ms": 337.02183560526464,
+      "ch_avg_ms": 10.345180801232345,
+      "speedup": 32.57766510616399
+    },
+    {
+      "query": "13. Prime vs non-prime comparison",
+      "mongo_avg_ms": 339.19092699943576,
+      "ch_avg_ms": 12.859596402267925,
+      "speedup": 26.376483086173362
+    },
+    {
+      "query": "14. Top 5 categories by order count per region",
+      "mongo_avg_ms": 338.68104679859243,
+      "ch_avg_ms": 11.21828680334147,
+      "speedup": 30.190086306022515
+    },
+    {
+      "query": "15. Discount impact analysis",
+      "mongo_avg_ms": 425.2270741999382,
+      "ch_avg_ms": 13.032027398003265,
+      "speedup": 32.6293876780132
+    },
+    {
+      "query": "16. Hourly order distribution",
+      "mongo_avg_ms": 329.0705311985221,
+      "ch_avg_ms": 6.2135449989000335,
+      "speedup": 52.96019120434092
+    },
+    {
+      "query": "17. Customer lifetime value (top 20)",
+      "mongo_avg_ms": 736.9611825997708,
+      "ch_avg_ms": 51.86627660004888,
+      "speedup": 14.208870019388982
+    },
+    {
+      "query": "18. Multi-match pipeline (region + status + date)",
+      "mongo_avg_ms": 137.76184099551756,
+      "ch_avg_ms": 9.287282399600372,
+      "speedup": 14.833385598508924
+    },
+    {
+      "query": "19. Revenue with tax calculation",
+      "mongo_avg_ms": 393.3837393997237,
+      "ch_avg_ms": 14.185079003800638,
+      "speedup": 27.732220546274263
+    },
+    {
+      "query": "20. Full analytics dashboard query",
+      "mongo_avg_ms": 394.23231299442705,
+      "ch_avg_ms": 12.223913602065295,
+      "speedup": 32.25090800116743
+    }
+  ]
+}
