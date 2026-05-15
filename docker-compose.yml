@@ -1,11 +1,12 @@
 services:
-  mongodb:
+  # MongoDB Replica Set: 1 Primary + 2 Secondaries
+  mongo-primary:
     image: mongo:7
     ports:
       - "27017:27017"
-    command: ["--replSet", "rs0"]
+    command: ["--replSet", "rs0", "--bind_ip_all"]
     volumes:
-      - mongo_data:/data/db
+      - mongo_primary_data:/data/db
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 5s
@@ -13,16 +14,67 @@ services:
       retries: 10
       start_period: 10s
 
+  mongo-secondary1:
+    image: mongo:7
+    ports:
+      - "27018:27017"
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    volumes:
+      - mongo_secondary1_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    depends_on:
+      mongo-primary:
+        condition: service_healthy
+
+  mongo-secondary2:
+    image: mongo:7
+    ports:
+      - "27019:27017"
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    volumes:
+      - mongo_secondary2_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    depends_on:
+      mongo-primary:
+        condition: service_healthy
+
+  # Initialize replica set with all 3 members
   mongo-init-replica:
     image: mongo:7
     depends_on:
-      mongodb:
+      mongo-primary:
+        condition: service_healthy
+      mongo-secondary1:
+        condition: service_healthy
+      mongo-secondary2:
         condition: service_healthy
     entrypoint: >
       bash -c "
-        mongosh --host mongodb:27017 --eval 'rs.initiate({_id: \"rs0\", members: [{_id: 0, host: \"mongodb:27017\"}]})' || true
+        mongosh --host mongo-primary:27017 --eval '
+          rs.initiate({
+            _id: \"rs0\",
+            members: [
+              {_id: 0, host: \"mongo-primary:27017\", priority: 2},
+              {_id: 1, host: \"mongo-secondary1:27017\", priority: 1},
+              {_id: 2, host: \"mongo-secondary2:27017\", priority: 1}
+            ]
+          })
+        ' || true;
+        sleep 5;
+        mongosh --host mongo-primary:27017 --eval 'rs.status().members.forEach(m => print(m.name, m.stateStr))';
       "
 
+  # ClickHouse
   clickhouse:
     image: clickhouse/clickhouse-server:24
     ports:
@@ -37,10 +89,15 @@ services:
       retries: 10
       start_period: 10s
 
+  # mg-clickhouse (tails oplog from primary)
   mg-clickhouse:
     build: .
     depends_on:
-      mongodb:
+      mongo-primary:
+        condition: service_healthy
+      mongo-secondary1:
+        condition: service_healthy
+      mongo-secondary2:
         condition: service_healthy
       clickhouse:
         condition: service_healthy
@@ -54,6 +111,8 @@ services:
     restart: on-failure
 
 volumes:
-  mongo_data:
+  mongo_primary_data:
+  mongo_secondary1_data:
+  mongo_secondary2_data:
   ch_data:
   mg_ch_data:

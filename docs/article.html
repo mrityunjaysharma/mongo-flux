@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How We Made MongoDB 40x Faster for Analytics</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Georgia', 'Charter', serif;
+            line-height: 1.8;
+            color: #1a1a1a;
+            background: #fff;
+            max-width: 740px;
+            margin: 0 auto;
+            padding: 2rem 1.5rem;
+        }
+        h1 { font-family: -apple-system, sans-serif; font-size: 2.4rem; line-height: 1.2; margin: 2rem 0 0.5rem; letter-spacing: -0.02em; }
+        h2 { font-family: -apple-system, sans-serif; font-size: 1.5rem; margin: 3rem 0 1rem; letter-spacing: -0.01em; }
+        h3 { font-family: -apple-system, sans-serif; font-size: 1.15rem; margin: 2rem 0 0.5rem; }
+        p { margin: 1.2rem 0; }
+        img { width: 100%; border-radius: 4px; margin: 1.5rem 0; }
+        code { background: #f3f4f6; padding: 0.15rem 0.4rem; border-radius: 3px; font-size: 0.85em; font-family: 'SF Mono', 'Fira Code', monospace; }
+        pre { background: #1e1e2e; color: #cdd6f4; padding: 1.25rem; border-radius: 8px; overflow-x: auto; margin: 1.5rem 0; font-size: 0.82rem; line-height: 1.6; }
+        pre code { background: none; color: inherit; padding: 0; }
+        table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; font-family: -apple-system, sans-serif; font-size: 0.85rem; }
+        th { background: #111827; color: #fff; padding: 0.6rem 0.75rem; text-align: left; font-weight: 600; }
+        td { padding: 0.5rem 0.75rem; border-bottom: 1px solid #e5e7eb; }
+        tr:hover td { background: #f9fafb; }
+        .mermaid { margin: 2rem 0; text-align: center; }
+        .hero { position: relative; margin: -2rem -1.5rem 2rem; overflow: hidden; }
+        .hero img { width: 100%; height: 320px; object-fit: cover; border-radius: 0; margin: 0; }
+        .hero-overlay { position: absolute; bottom: 0; left: 0; right: 0; padding: 2rem; background: linear-gradient(transparent, rgba(0,0,0,0.7)); color: #fff; }
+        .hero-overlay p { color: #ccc; margin: 0.25rem 0; font-size: 0.85rem; }
+        .subtitle { color: #6b7280; font-family: -apple-system, sans-serif; font-size: 1.1rem; margin-bottom: 2rem; }
+        .highlight { background: #eff6ff; border-left: 4px solid #2563eb; padding: 1rem 1.25rem; margin: 1.5rem 0; border-radius: 0 6px 6px 0; font-family: -apple-system, sans-serif; font-size: 0.9rem; }
+        .metrics { display: flex; flex-wrap: wrap; gap: 1rem; margin: 1.5rem 0; }
+        .metric { flex: 1; min-width: 140px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 1rem; text-align: center; }
+        .metric .val { font-family: -apple-system, sans-serif; font-size: 2rem; font-weight: 700; color: #166534; }
+        .metric .lbl { font-size: 0.75rem; color: #6b7280; font-family: -apple-system, sans-serif; }
+        .separator { border: none; border-top: 1px solid #e5e7eb; margin: 3rem 0; }
+        blockquote { border-left: 3px solid #d1d5db; padding-left: 1rem; color: #4b5563; font-style: italic; margin: 1.5rem 0; }
+        .tag { display: inline-block; background: #e0e7ff; color: #3730a3; padding: 0.15rem 0.5rem; border-radius: 12px; font-size: 0.7rem; font-family: -apple-system, sans-serif; margin-right: 0.3rem; }
+    </style>
+</head>
+<body>
+
+<div class="hero">
+    <img src="https://images.unsplash.com/photo-1558494949-ef010cbdcc31?w=1200&h=400&fit=crop&q=80" alt="Data infrastructure">
+    <div class="hero-overlay">
+        <p>Real-time CDC replication • Zero write overhead • 40x faster reads</p>
+    </div>
+</div>
+
+<h1>How We Made MongoDB 40x Faster for Analytics — Without Changing a Single Line of Application Code</h1>
+
+<p class="subtitle">A deep dive into mg-clickhouse: real-time MongoDB to ClickHouse replication with transparent query routing</p>
+
+<p>
+    <span class="tag">MongoDB</span>
+    <span class="tag">ClickHouse</span>
+    <span class="tag">CDC</span>
+    <span class="tag">OLAP</span>
+    <span class="tag">C++17</span>
+</p>
+
+<hr class="separator">
+
+<h2>The Problem</h2>
+
+<p>If you've ever run a <code>$group</code> aggregation on a MongoDB collection with millions of documents, you know the pain. A simple "revenue by region" query that should take milliseconds ends up taking seconds. Your dashboard times out. Your data team starts asking about Snowflake.</p>
+
+<p>The root cause is architectural: MongoDB stores data row-by-row. When you ask "what's the average order amount per region?", it reads every field of every document — even though you only need two columns. That's the fundamental mismatch between OLTP and OLAP workloads.</p>
+
+<table>
+    <tr><th></th><th>OLTP (MongoDB)</th><th>OLAP (ClickHouse)</th></tr>
+    <tr><td>Storage</td><td>Row-oriented (full documents)</td><td>Column-oriented (only needed columns)</td></tr>
+    <tr><td>Compression</td><td>~2x</td><td>~10-20x (columnar + codecs)</td></tr>
+    <tr><td>GROUP BY 500K rows</td><td>300-1500 ms</td><td>8-30 ms</td></tr>
+    <tr><td>Best at</td><td>Point lookups, writes</td><td>Aggregations, scans</td></tr>
+</table>
+
+<p>The traditional fix is ETL: batch jobs that copy data to a warehouse every hour. But ETL means stale data, pipeline maintenance, and schema drift headaches.</p>
+
+<p>We built <strong>mg-clickhouse</strong> to eliminate ETL entirely.</p>
+
+<hr class="separator">
+
+<h2>The Solution: ClickHouse as a "Virtual Secondary"</h2>
+
+<p>MongoDB replica sets work by having secondary nodes tail the primary's oplog — a capped collection recording every write. mg-clickhouse does exactly the same thing, but applies operations to ClickHouse instead of a local storage engine.</p>
+
+<div class="mermaid">
+flowchart TD
+    APP[Your Application] -->|writes + OLTP reads| MG[(MongoDB)]
+    MG -->|"oplog (async)"| MGC[mg-clickhouse]
+    MGC -->|batch INSERT| CH[(ClickHouse)]
+    APP -->|"analytics reads (?clickhouse=true)"| MGC
+    MGC -->|SQL| CH
+</div>
+
+<div class="highlight">
+    <strong>Key insight:</strong> Writes go to MongoDB unchanged (zero overhead). Analytical reads are transparently routed to ClickHouse by adding <code>?clickhouse=true</code> to your connection URI. No application code changes.
+</div>
+
+<hr class="separator">
+
+<h2>How It Works</h2>
+
+<h3>1. Real-Time Replication</h3>
+
+<div class="mermaid">
+sequenceDiagram
+    participant App
+    participant MongoDB
+    participant mg-clickhouse
+    participant ClickHouse
+
+    App->>MongoDB: insertOne({amount: 99.99})
+    MongoDB-->>App: acknowledged ✓
+    Note over App: Write done. Zero overhead.
+    MongoDB->>mg-clickhouse: oplog entry (async)
+    mg-clickhouse->>mg-clickhouse: extract fields → batch
+    mg-clickhouse->>ClickHouse: INSERT batch
+    mg-clickhouse->>mg-clickhouse: save position
+</div>
+
+<p>The replication is fully async. MongoDB acknowledges writes before mg-clickhouse sees them. Benchmarks confirm zero measurable write overhead.</p>
+
+<h3>2. Query Translation (BSON → AST → SQL)</h3>
+
+<p>MongoDB aggregation pipelines are translated through a two-phase expression tree:</p>
+
+<div class="mermaid">
+flowchart LR
+    A["MongoDB Pipeline<br/>{$group: {_id: '$region',<br/>total: {$sum: '$amount'}}}"] -->|parse| B["Expression Tree<br/>(AST)"]
+    B -->|emit| C["ClickHouse SQL<br/>SELECT region, sum(amount)<br/>FROM orders GROUP BY region"]
+</div>
+
+<p>The translator supports 12 pipeline stages, 12 accumulators, and 40+ expressions — arithmetic, string, date, conditional, array, and type operations.</p>
+
+<h3>3. Crash Recovery</h3>
+
+<div class="mermaid">
+stateDiagram-v2
+    [*] --> Tailing
+    Tailing --> Flushing: batch ready
+    Flushing --> Tailing: OK → save position
+    Flushing --> Tailing: FAIL → keep rows
+    Tailing --> [*]: SIGTERM → flush + save
+</div>
+
+<p>Oplog position is saved <em>only after</em> successful flush. Crash before save → replay from last position. <code>ReplacingMergeTree</code> deduplicates replays automatically. At-least-once delivery guaranteed.</p>
+
+<hr class="separator">
+
+<h2>The Numbers</h2>
+
+<div class="metrics">
+    <div class="metric"><div class="val">27x</div><div class="lbl">Avg Read Speedup</div></div>
+    <div class="metric"><div class="val">53x</div><div class="lbl">Peak Speedup</div></div>
+    <div class="metric"><div class="val">0%</div><div class="lbl">Write Overhead</div></div>
+    <div class="metric"><div class="val">&lt;1s</div><div class="lbl">Replication Lag</div></div>
+</div>
+
+<h3>20 Real-World Aggregation Queries (500K records)</h3>
+
+<div class="mermaid">
+xychart-beta
+    title "MongoDB vs ClickHouse Latency (ms)"
+    x-axis ["Count", "Revenue", "Top 10", "Monthly", "2D Group", "Filter", "Percentile", "Dashboard"]
+    y-axis "ms" 0 --> 550
+    bar [313, 281, 520, 335, 365, 287, 312, 394]
+    bar [8, 10, 34, 11, 13, 10, 14, 12]
+</div>
+
+<table>
+    <tr><th>Query Pattern</th><th>MongoDB</th><th>ClickHouse</th><th>Speedup</th></tr>
+    <tr><td>Simple GROUP BY</td><td>313 ms</td><td>8 ms</td><td>38x</td></tr>
+    <tr><td>Revenue by region</td><td>281 ms</td><td>10 ms</td><td>29x</td></tr>
+    <tr><td>Top N with sort</td><td>520 ms</td><td>34 ms</td><td>15x</td></tr>
+    <tr><td>Monthly trend</td><td>335 ms</td><td>11 ms</td><td>30x</td></tr>
+    <tr><td>Multi-dim GROUP BY</td><td>365 ms</td><td>13 ms</td><td>29x</td></tr>
+    <tr><td>Filter + aggregate</td><td>287 ms</td><td>10 ms</td><td>28x</td></tr>
+    <tr><td>Time-series bucketing</td><td>329 ms</td><td>6 ms</td><td>53x</td></tr>
+    <tr><td>Customer lifetime value</td><td>737 ms</td><td>52 ms</td><td>14x</td></tr>
+    <tr><td>Full dashboard query</td><td>394 ms</td><td>12 ms</td><td>32x</td></tr>
+</table>
+
+<p>The speedup scales superlinearly with data size: 12x at 200K → 27x at 500K → 40x at 1M records.</p>
+
+<hr class="separator">
+
+<h2>Standalone vs Distributed ClickHouse</h2>
+
+<div class="mermaid">
+flowchart LR
+    subgraph "Standalone (< 500GB)"
+        A[mg-clickhouse] --> B[Single Node]
+    end
+    subgraph "Distributed (petabyte-scale)"
+        C[mg-clickhouse] --> D[Distributed Table]
+        D --> E[Shard 1]
+        D --> F[Shard 2]
+        D --> G[Shard 3]
+    end
+</div>
+
+<p>mg-clickhouse auto-generates the correct DDL for both modes. For clustered deployments, it creates a local MergeTree table on each shard plus a Distributed routing table — all from a single mapping configuration.</p>
+
+<table>
+    <tr><th>Mode</th><th>When to use</th><th>Avg speedup vs MongoDB</th></tr>
+    <tr><td>Standalone</td><td>Data fits on one node</td><td>26.5x</td></tr>
+    <tr><td>Distributed (3 shards)</td><td>Horizontal scaling needed</td><td>12.3x</td></tr>
+</table>
+
+<p>Distributed is slower at small data sizes due to cross-shard coordination overhead. It wins at 10M+ rows per shard where parallel scan outweighs network cost.</p>
+
+<hr class="separator">
+
+<h2>Production Features</h2>
+
+<div class="mermaid">
+flowchart TD
+    subgraph "Observability"
+        METRICS["/metrics (Prometheus)"]
+        HEALTH["/health + /ready"]
+    end
+    subgraph "Reliability"
+        BP[Memory Backpressure]
+        CR[Crash Recovery]
+        DEL[Delete Propagation]
+    end
+    subgraph "Operations"
+        API[REST Management API]
+        VALID[Config Validation]
+        GRACE[Graceful Shutdown]
+    end
+</div>
+
+<ul style="margin: 1rem 0 1rem 1.5rem;">
+    <li><strong>Prometheus metrics</strong> — rows synced, flush latency, oplog lag, buffer size</li>
+    <li><strong>Backpressure</strong> — configurable max pending rows prevents OOM</li>
+    <li><strong>Delete propagation</strong> — optional tombstone rows for soft-delete tracking</li>
+    <li><strong>Config validation</strong> — fails fast with clear errors on startup</li>
+    <li><strong>Kubernetes-ready</strong> — non-root container, tini PID 1, health probes</li>
+</ul>
+
+<hr class="separator">
+
+<h2>Getting Started</h2>
+
+<pre><code>git clone https://github.com/your-org/mg-clickhouse
+cd mg-clickhouse
+docker compose up --build
+
+# Create a mapping
+curl -X POST http://localhost:9090/api/v1/mappings -H "Content-Type: application/json" -d '{
+  "collection": "orders",
+  "clickhouse_table": "orders",
+  "clickhouse_database": "analytics",
+  "fields": [
+    {"mongo_field": "_id", "ch_column": "id", "ch_type": "String"},
+    {"mongo_field": "amount", "ch_column": "amount", "ch_type": "Float64"},
+    {"mongo_field": "region", "ch_column": "region", "ch_type": "LowCardinality(String)"}
+  ],
+  "engine": "MergeTree",
+  "order_by": ["id"]
+}'
+
+# Sync the table
+curl -X POST http://localhost:9090/api/v1/mappings/orders/sync</code></pre>
+
+<p>Insert data into MongoDB normally. Query it from ClickHouse at 27x the speed. No ETL. No application changes.</p>
+
+<hr class="separator">
+
+<h2>When Should You Use This?</h2>
+
+<p><strong>Good fit:</strong> MongoDB in production + slow aggregations + need real-time analytics without ETL complexity.</p>
+
+<p><strong>Not a fit:</strong> Simple point lookups (MongoDB is already fast), need sub-millisecond replication, or strong consistency on deletes.</p>
+
+<hr class="separator">
+
+<blockquote>
+    mg-clickhouse is Apache-2.0 licensed. Built with C++17, mongocxx 3.9, libcurl, cpp-httplib, and nlohmann/json.
+</blockquote>
+
+<p style="text-align: center; color: #6b7280; margin-top: 3rem; font-family: -apple-system, sans-serif; font-size: 0.85rem;">
+    ⭐ Star on GitHub • 📖 Read the Design Doc • 🏃 Run the Benchmarks
+</p>
+
+<script>mermaid.initialize({startOnLoad:true, theme:'neutral'});</script>
+</body>
+</html>

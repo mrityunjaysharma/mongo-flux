@@ -1,6 +1,7 @@
 # mg-clickhouse configuration for Docker Compose
+# MongoDB Replica Set: 1 Primary + 2 Secondaries
 mongo:
-  uri: "mongodb://mongodb:27017/?directConnection=true"
+  uri: "mongodb://mongo-primary:27017,mongo-secondary1:27017,mongo-secondary2:27017/?replicaSet=rs0"
   database: "myapp"
 
 clickhouse:
@@ -15,6 +16,8 @@ sync:
   batch_size: 1000
   flush_interval_ms: 500
   resume_token_path: "/var/lib/mg-clickhouse/resume_tokens"
+  max_pending_rows: 100000
+  propagate_deletes: false
 
 api:
   port: 9090
