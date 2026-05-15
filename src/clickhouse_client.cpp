@@ -4,6 +4,8 @@
 #include <sstream>
 #include <stdexcept>
 #include <chrono>
+#include <cstdio>
+#include <cctype>
 
 namespace mg_clickhouse {
 
@@ -25,24 +27,48 @@ struct ClickHouseClient::Impl {
         return total;
     }
 
-    std::string http_query(const std::string& sql, bool expect_data = false) {
-        CURL* curl = curl_easy_init();
-        if (!curl) {
-            throw std::runtime_error("Failed to initialize CURL");
+    /** URL-encode a string for safe use in query parameters. */
+    static std::string url_encode(const std::string& value) {
+        std::string encoded;
+        encoded.reserve(value.size() * 3);
+        for (unsigned char c : value) {
+            if (std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
+                encoded += static_cast<char>(c);
+            } else {
+                char buf[4];
+                std::snprintf(buf, sizeof(buf), "%%%02X", c);
+                encoded += buf;
+            }
         }
+        return encoded;
+    }
 
+    /** RAII wrapper for CURL handles to prevent leaks. */
+    struct CurlHandle {
+        CURL* handle;
+        CurlHandle() : handle(curl_easy_init()) {
+            if (!handle) throw std::runtime_error("Failed to initialize CURL");
+        }
+        ~CurlHandle() { if (handle) curl_easy_cleanup(handle); }
+        CurlHandle(const CurlHandle&) = delete;
+        CurlHandle& operator=(const CurlHandle&) = delete;
+        operator CURL*() { return handle; }
+    };
+
+    std::string http_query(const std::string& sql, bool expect_data = false) {
+        CurlHandle curl;
         std::string response;
         std::string url = base_url;
 
-        // Add database parameter
-        url += "?database=" + config.database;
+        // Add database parameter (URL-encoded)
+        url += "?database=" + url_encode(config.database);
 
-        // Add credentials
+        // Add credentials (URL-encoded to handle special characters)
         if (!config.user.empty()) {
-            url += "&user=" + config.user;
+            url += "&user=" + url_encode(config.user);
         }
         if (!config.password.empty()) {
-            url += "&password=" + config.password;
+            url += "&password=" + url_encode(config.password);
         }
 
         curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
@@ -52,11 +78,11 @@ struct ClickHouseClient::Impl {
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
         curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
         curl_easy_setopt(curl, CURLOPT_TIMEOUT, 300L);
+        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
 
         CURLcode res = curl_easy_perform(curl);
         long http_code = 0;
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
-        curl_easy_cleanup(curl);
 
         if (res != CURLE_OK) {
             throw std::runtime_error(std::string("ClickHouse HTTP request failed: ") +

@@ -80,6 +80,36 @@ void ManagementApi::run() {
                 return;
             }
 
+            // Validate field mappings
+            for (const auto& field : mapping.fields) {
+                if (field.mongo_field.empty()) {
+                    res.status = 400;
+                    nlohmann::json err = {{"error", "Each field must have a non-empty mongo_field"}};
+                    res.set_content(err.dump(), "application/json");
+                    return;
+                }
+                if (field.ch_column.empty()) {
+                    res.status = 400;
+                    nlohmann::json err = {{"error", "Each field must have a non-empty ch_column"}};
+                    res.set_content(err.dump(), "application/json");
+                    return;
+                }
+                if (field.ch_type.empty()) {
+                    res.status = 400;
+                    nlohmann::json err = {{"error", "Each field must have a non-empty ch_type"}};
+                    res.set_content(err.dump(), "application/json");
+                    return;
+                }
+            }
+
+            // Validate clickhouse_table
+            if (mapping.clickhouse_table.empty()) {
+                res.status = 400;
+                nlohmann::json err = {{"error", "clickhouse_table is required"}};
+                res.set_content(err.dump(), "application/json");
+                return;
+            }
+
             bool created = registry_->upsert(mapping);
 
             nlohmann::json response = {

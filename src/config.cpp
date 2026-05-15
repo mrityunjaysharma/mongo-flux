@@ -50,6 +50,39 @@ Config load_config(const std::string& path) {
         if (logging["file"]) config.logging.file = logging["file"].as<std::string>();
     }
 
+    // Validate required fields
+    if (config.mongo.uri.empty()) {
+        throw std::runtime_error("Config validation: mongo.uri is required");
+    }
+    if (config.mongo.database.empty()) {
+        throw std::runtime_error("Config validation: mongo.database is required");
+    }
+    if (config.clickhouse.host.empty()) {
+        throw std::runtime_error("Config validation: clickhouse.host is required");
+    }
+    if (config.clickhouse.database.empty()) {
+        throw std::runtime_error("Config validation: clickhouse.database is required");
+    }
+
+    // Validate numeric ranges
+    if (config.clickhouse.port <= 0 || config.clickhouse.port > 65535) {
+        throw std::runtime_error("Config validation: clickhouse.port must be 1-65535");
+    }
+    if (config.api.port <= 0 || config.api.port > 65535) {
+        throw std::runtime_error("Config validation: api.port must be 1-65535");
+    }
+    if (config.sync.batch_size <= 0 || config.sync.batch_size > 1000000) {
+        throw std::runtime_error("Config validation: sync.batch_size must be 1-1000000");
+    }
+    if (config.sync.flush_interval_ms <= 0 || config.sync.flush_interval_ms > 60000) {
+        throw std::runtime_error("Config validation: sync.flush_interval_ms must be 1-60000");
+    }
+
+    // Validate sync mode
+    if (config.sync.mode != "oplog" && config.sync.mode != "changestream") {
+        throw std::runtime_error("Config validation: sync.mode must be 'oplog' or 'changestream'");
+    }
+
     return config;
 }
 

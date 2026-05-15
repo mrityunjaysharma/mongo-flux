@@ -156,7 +156,11 @@ void OplogSync::tail_oplog_inner() {
     };
     std::unordered_map<std::string, PendingBatch> pending;
 
+    // Track the last successfully processed oplog timestamp
+    bsoncxx::types::b_timestamp last_processed_ts{0, 0};
+
     auto flush_all = [&]() {
+        bool all_flushed = true;
         for (auto& [collection, batch] : pending) {
             if (batch.rows.empty()) continue;
 
@@ -201,13 +205,22 @@ void OplogSync::tail_oplog_inner() {
                     mapping.clickhouse_table,
                     columns,
                     ch_rows);
+
+                // Only clear batch on successful flush
+                batch.rows.clear();
+                batch.last_flush = std::chrono::steady_clock::now();
             } catch (const std::exception& e) {
                 std::cerr << "[mg-clickhouse/oplog] Flush failed for "
-                          << collection << ": " << e.what() << std::endl;
+                          << collection << " (" << batch.rows.size() << " rows): "
+                          << e.what() << std::endl;
+                all_flushed = false;
+                // Keep rows in batch for retry on next flush cycle
             }
+        }
 
-            batch.rows.clear();
-            batch.last_flush = std::chrono::steady_clock::now();
+        // Only persist oplog position after ALL batches flushed successfully
+        if (all_flushed && last_processed_ts.timestamp > 0) {
+            save_oplog_timestamp(last_processed_ts);
         }
     };
 
@@ -239,6 +252,12 @@ void OplogSync::tail_oplog_inner() {
         auto mapping_opt = registry_->get(collection);
         if (!mapping_opt || !mapping_opt->enabled) continue;
         const auto& mapping = *mapping_opt;
+
+        // Track the timestamp of this entry (saved AFTER successful flush)
+        auto ts_elem = entry["ts"];
+        if (ts_elem && ts_elem.type() == bsoncxx::type::k_timestamp) {
+            last_processed_ts = ts_elem.get_timestamp();
+        }
 
         if (op == "i") {
             // INSERT — the "o" field contains the full document
@@ -343,12 +362,6 @@ void OplogSync::tail_oplog_inner() {
             // Partial updates: skip (ReplacingMergeTree handles via periodic full-sync)
         }
         // op == "d" (delete) — handled by ReplacingMergeTree version column
-
-        // Save oplog position
-        auto ts_elem = entry["ts"];
-        if (ts_elem && ts_elem.type() == bsoncxx::type::k_timestamp) {
-            save_oplog_timestamp(ts_elem.get_timestamp());
-        }
 
         // Flush if batch is full
         for (auto& [coll, batch] : pending) {
