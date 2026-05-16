@@ -178,12 +178,15 @@ Three functions eliminate code duplication between oplog sync and change stream 
 ## Crash Recovery
 
 ```mermaid
-stateDiagram-v2
-    [*] --> Tailing
-    Tailing --> Flushing: batch full / interval
-    Flushing --> Tailing: OK → save position
-    Flushing --> Tailing: FAIL → keep rows, retry
-    Tailing --> [*]: SIGTERM → flush + save + exit
+flowchart TD
+    START([Start / Resume]) --> TAIL[Tailing Oplog]
+    TAIL -->|"batch full or 500ms elapsed"| FLUSH[Flush to ClickHouse]
+    FLUSH -->|"success"| SAVE[Save Oplog Position]
+    SAVE --> TAIL
+    FLUSH -->|"failure"| RETRY[Keep Rows in Buffer]
+    RETRY --> TAIL
+    TAIL -->|"SIGTERM received"| SHUTDOWN[Flush Remaining + Save + Exit]
+    SHUTDOWN --> DONE([Stopped])
 ```
 
 The critical design decision: oplog position is saved only AFTER a successful flush to ClickHouse. If MongoFlux crashes between flush and save, the same entries replay on restart. `ReplacingMergeTree` deduplicates the replays automatically. At-least-once delivery guaranteed.

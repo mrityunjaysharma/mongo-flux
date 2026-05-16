@@ -196,12 +196,15 @@ flowchart LR
 <h3>Crash Recovery</h3>
 
 <div class="mermaid">
-stateDiagram-v2
-    [*] --> Tailing
-    Tailing --> Flushing: batch full / interval
-    Flushing --> Tailing: OK → save position
-    Flushing --> Tailing: FAIL → keep rows
-    Tailing --> [*]: SIGTERM → flush + save
+flowchart TD
+    START([Start / Resume]) --> TAIL[Tailing Oplog]
+    TAIL -->|"batch full or 500ms elapsed"| FLUSH[Flush to ClickHouse]
+    FLUSH -->|"success"| SAVE[Save Oplog Position]
+    SAVE --> TAIL
+    FLUSH -->|"failure"| RETRY[Keep Rows in Buffer]
+    RETRY --> TAIL
+    TAIL -->|"SIGTERM received"| SHUTDOWN[Flush Remaining + Save + Exit]
+    SHUTDOWN --> DONE([Stopped])
 </div>
 
 <div class="note">Position saved only after successful flush. Crash before save → replay. ReplacingMergeTree deduplicates. At-least-once delivery guaranteed.</div>
