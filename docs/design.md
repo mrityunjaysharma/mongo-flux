@@ -1,7 +1,5 @@
 # MongoFlux — Design & Architecture
 
-![MongoFlux System Design — Oplog CDC replication with query routing](https://placehold.co/1200x300/0f172a/22d3ee?text=MongoFlux+%E2%80%94+Real-time+CDC+%2B+Transparent+Query+Routing&font=raleway)
-
 **v1.2** | 2026-05-15 | Production
 
 ---
