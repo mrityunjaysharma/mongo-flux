@@ -15,15 +15,23 @@ No ETL. No batch jobs. No data staleness.
 ## How it works
 
 ```mermaid
-flowchart TD
-    APP[Your Application] -->|writes + OLTP reads| MGP[(MongoDB Primary)]
-    MGP -->|replication| MGS1[(Secondary 1)]
-    MGP -->|replication| MGS2[(Secondary 2)]
-    APP -->|"all reads (find/aggregate)"| MGC[MongoFlux]
-    MGC -->|"?clickhouse=true → SQL"| CH[(ClickHouse)]
-    MGC -->|"no flag → forward to MongoDB"| MGP
-    MGP -->|"oplog (async)"| MGC
-    MGC -->|batch INSERT| CH
+flowchart LR
+    subgraph writes ["Write Path (unchanged)"]
+        APP1[App] -->|insert/update/delete| MGP[(MongoDB Primary)]
+        MGP -->|replication| S1[(Secondary 1)]
+        MGP -->|replication| S2[(Secondary 2)]
+    end
+
+    subgraph reads ["Read Path (via MongoFlux)"]
+        APP2[App] -->|"find() / aggregate()"| MF[MongoFlux Proxy]
+        MF -->|"clickhouse=true"| CH[(ClickHouse)]
+        MF -->|"clickhouse=false"| MGP2[(MongoDB)]
+    end
+
+    subgraph sync ["Sync (background)"]
+        MGP3[(MongoDB Primary)] -->|"oplog tail (async)"| MF2[MongoFlux]
+        MF2 -->|"batch INSERT every 500ms"| CH2[(ClickHouse)]
+    end
 ```
 
 Three things happen:
