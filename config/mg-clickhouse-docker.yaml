@@ -7,7 +7,7 @@ mongo:
 clickhouse:
   host: "clickhouse"
   port: 8123
-  database: "analytics"
+  database: "myapp"
   user: "default"
   password: ""
 

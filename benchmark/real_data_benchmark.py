@@ -7,8 +7,8 @@ loads data into local ClickHouse, and benchmarks analytical queries on both.
 
 Usage:
     export MONGO_URI="mongodb://user:pass@host1:27017,host2:27017,host3:27017/dbname?authSource=admin&readPreference=primary"
-    export MONGO_DB="apm_db"
-    export MONGO_COLLECTION="apmActiveAlertsProdUSMar10"
+    export MONGO_DB="mydb"
+    export MONGO_COLLECTION="myCollection"
 
     python3 benchmark/real_data_benchmark.py --limit 5000000 --iterations 3
 
