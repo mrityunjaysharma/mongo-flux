@@ -328,13 +328,23 @@ func (o *OplogSync) tailOplogInner(ctx context.Context) error {
 
 func (o *OplogSync) saveOplogTimestamp(ts primitive.Timestamp) {
 	path := filepath.Join(o.config.Sync.ResumeTokenPath, "oplog_position.json")
-	os.MkdirAll(o.config.Sync.ResumeTokenPath, 0755)
+	if err := os.MkdirAll(o.config.Sync.ResumeTokenPath, 0755); err != nil {
+		log.Printf("[mongoflux/oplog] Failed to create resume token directory: %v", err)
+		return
+	}
 
-	data, _ := json.Marshal(map[string]uint32{
+	data, err := json.Marshal(map[string]uint32{
 		"timestamp": ts.T,
 		"increment": ts.I,
 	})
-	os.WriteFile(path, data, 0644)
+	if err != nil {
+		log.Printf("[mongoflux/oplog] Failed to marshal oplog position: %v", err)
+		return
+	}
+
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		log.Printf("[mongoflux/oplog] Failed to persist oplog position: %v", err)
+	}
 }
 
 func (o *OplogSync) loadOplogTimestamp() primitive.Timestamp {

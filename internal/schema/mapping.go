@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 )
@@ -72,7 +73,7 @@ func (r *Registry) Get(collection string) *CollectionMapping {
 	return &m
 }
 
-// GetAll returns all mappings.
+// GetAll returns all mappings. Always returns a non-nil slice.
 func (r *Registry) GetAll() []CollectionMapping {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -142,7 +143,7 @@ func (r *Registry) GenerateCreateTableSQL(mapping CollectionMapping) string {
 	return sb.String()
 }
 
-// SaveToFile persists mappings to a JSON file.
+// SaveToFile persists mappings to a JSON file, creating parent directories if needed.
 func (r *Registry) SaveToFile(path string) error {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -155,6 +156,11 @@ func (r *Registry) SaveToFile(path string) error {
 	data, err := json.MarshalIndent(mappings, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal mappings: %w", err)
+	}
+
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory '%s': %w", dir, err)
 	}
 
 	return os.WriteFile(path, data, 0644)

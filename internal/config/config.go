@@ -1,8 +1,11 @@
+// Package config handles YAML configuration loading, validation, and environment variable overrides.
 package config
 
 import (
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -54,6 +57,7 @@ type Config struct {
 	Logging    LoggingConfig    `yaml:"logging" json:"logging"`
 }
 
+// Load reads config from YAML, applies environment variable overrides, and validates.
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -73,43 +77,82 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to parse config file '%s': %w", path, err)
 	}
 
-	if err := cfg.validate(); err != nil {
+	applyEnvOverrides(cfg)
+
+	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
 
 	return cfg, nil
 }
 
-func (c *Config) validate() error {
+// Validate checks all configuration invariants, reporting all errors at once.
+func (c *Config) Validate() error {
+	var errs []string
+
 	if c.Mongo.URI == "" {
-		return fmt.Errorf("config validation: mongo.uri is required")
+		errs = append(errs, "mongo.uri is required")
 	}
 	if c.Mongo.Database == "" {
-		return fmt.Errorf("config validation: mongo.database is required")
+		errs = append(errs, "mongo.database is required")
 	}
 	if c.ClickHouse.Host == "" {
-		return fmt.Errorf("config validation: clickhouse.host is required")
+		errs = append(errs, "clickhouse.host is required")
 	}
 	if c.ClickHouse.Database == "" {
-		return fmt.Errorf("config validation: clickhouse.database is required")
+		errs = append(errs, "clickhouse.database is required")
 	}
 	if c.ClickHouse.Port <= 0 || c.ClickHouse.Port > 65535 {
-		return fmt.Errorf("config validation: clickhouse.port must be 1-65535")
+		errs = append(errs, "clickhouse.port must be 1-65535")
 	}
 	if c.API.Port <= 0 || c.API.Port > 65535 {
-		return fmt.Errorf("config validation: api.port must be 1-65535")
+		errs = append(errs, "api.port must be 1-65535")
 	}
 	if c.Sync.BatchSize <= 0 || c.Sync.BatchSize > 1000000 {
-		return fmt.Errorf("config validation: sync.batch_size must be 1-1000000")
+		errs = append(errs, "sync.batch_size must be 1-1000000")
 	}
 	if c.Sync.FlushIntervalMs <= 0 || c.Sync.FlushIntervalMs > 60000 {
-		return fmt.Errorf("config validation: sync.flush_interval_ms must be 1-60000")
+		errs = append(errs, "sync.flush_interval_ms must be 1-60000")
 	}
 	if c.Sync.MaxPendingRows <= 0 || c.Sync.MaxPendingRows > 10000000 {
-		return fmt.Errorf("config validation: sync.max_pending_rows must be 1-10000000")
+		errs = append(errs, "sync.max_pending_rows must be 1-10000000")
 	}
 	if c.Sync.Mode != "oplog" && c.Sync.Mode != "changestream" {
-		return fmt.Errorf("config validation: sync.mode must be 'oplog' or 'changestream'")
+		errs = append(errs, "sync.mode must be 'oplog' or 'changestream'")
+	}
+	if c.Sync.ResumeTokenPath == "" {
+		errs = append(errs, "sync.resume_token_path is required")
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("config validation failed:\n  - %s", strings.Join(errs, "\n  - "))
 	}
 	return nil
+}
+
+// applyEnvOverrides applies MG_ prefixed environment variable overrides.
+func applyEnvOverrides(cfg *Config) {
+	if v := os.Getenv("MG_MONGO_URI"); v != "" {
+		cfg.Mongo.URI = v
+	}
+	if v := os.Getenv("MG_MONGO_DB"); v != "" {
+		cfg.Mongo.Database = v
+	}
+	if v := os.Getenv("MG_CH_HOST"); v != "" {
+		cfg.ClickHouse.Host = v
+	}
+	if v := os.Getenv("MG_CH_PORT"); v != "" {
+		if p, err := strconv.Atoi(v); err == nil {
+			cfg.ClickHouse.Port = p
+		}
+	}
+	if v := os.Getenv("MG_CH_DB"); v != "" {
+		cfg.ClickHouse.Database = v
+	}
+	if v := os.Getenv("MG_CH_USER"); v != "" {
+		cfg.ClickHouse.User = v
+	}
+	if v := os.Getenv("MG_CH_PASSWORD"); v != "" {
+		cfg.ClickHouse.Password = v
+	}
 }

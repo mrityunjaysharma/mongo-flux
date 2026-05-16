@@ -3,7 +3,6 @@ package sync
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -190,10 +189,17 @@ func (cs *ChangeStreamSync) flushBatch(collection string, mapping *schema.Collec
 
 func (cs *ChangeStreamSync) saveResumeToken(collection string, token interface{}) {
 	path := filepath.Join(cs.config.Sync.ResumeTokenPath, collection+".json")
-	os.MkdirAll(cs.config.Sync.ResumeTokenPath, 0755)
+	if err := os.MkdirAll(cs.config.Sync.ResumeTokenPath, 0755); err != nil {
+		log.Printf("[mongoflux/cs] Failed to create resume token directory: %v", err)
+		return
+	}
 	data, err := json.Marshal(token)
-	if err == nil {
-		os.WriteFile(path, data, 0644)
+	if err != nil {
+		log.Printf("[mongoflux/cs] Failed to marshal resume token for %s: %v", collection, err)
+		return
+	}
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		log.Printf("[mongoflux/cs] Failed to persist resume token for %s: %v", collection, err)
 	}
 }
 
@@ -205,35 +211,8 @@ func (cs *ChangeStreamSync) loadResumeToken(collection string) bson.Raw {
 	}
 	var token bson.Raw
 	if err := json.Unmarshal(data, &token); err != nil {
+		log.Printf("[mongoflux/cs] Corrupted resume token for %s, starting fresh", collection)
 		return nil
 	}
 	return token
 }
-
-// EscapeCHString is exported for use by other packages.
-func EscapeCHString(val string) string {
-	return escapeCHString(val)
-}
-
-// PrepareBatchForInsert is exported for use by other packages.
-func PrepareBatchForInsert(batch []map[string]interface{}, mapping *schema.CollectionMapping) ([]string, [][]string) {
-	return prepareBatchForInsert(batch, mapping)
-}
-
-// ExtractMappedFields is exported for use by other packages.
-func ExtractMappedFields(doc bson.M, mapping *schema.CollectionMapping) map[string]interface{} {
-	return extractMappedFields(doc, mapping)
-}
-
-// FormatValue is exported for use by other packages.
-func FormatValue(val interface{}) interface{} {
-	return formatValue(val)
-}
-
-// ExtractCollection is exported for testing.
-func ExtractCollection(ns string) string {
-	return extractCollection(ns)
-}
-
-// Ensure we have the fmt import used
-var _ = fmt.Sprintf

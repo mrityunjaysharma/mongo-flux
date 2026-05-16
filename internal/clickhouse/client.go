@@ -29,7 +29,7 @@ type Client struct {
 	httpClient *http.Client
 }
 
-// NewClient creates a new ClickHouse HTTP client.
+// NewClient creates a new ClickHouse HTTP client with connection pooling.
 func NewClient(cfg config.ClickHouseConfig) *Client {
 	scheme := "http"
 	if cfg.Port == 8443 || cfg.Port == 443 {
@@ -37,13 +37,20 @@ func NewClient(cfg config.ClickHouseConfig) *Client {
 	}
 	baseURL := fmt.Sprintf("%s://%s:%d/", scheme, cfg.Host, cfg.Port)
 
+	transport := &http.Transport{
+		MaxIdleConns:        20,
+		MaxIdleConnsPerHost: 20,
+		IdleConnTimeout:     90 * time.Second,
+	}
+
 	return &Client{
 		baseURL:  baseURL,
 		database: cfg.Database,
 		user:     cfg.User,
 		password: cfg.Password,
 		httpClient: &http.Client{
-			Timeout: 300 * time.Second,
+			Timeout:   300 * time.Second,
+			Transport: transport,
 		},
 	}
 }
@@ -67,13 +74,18 @@ func (c *Client) doQuery(sql string) (string, error) {
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	// Limit response body to 64MB to prevent OOM on unexpected large responses
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024*1024))
 	if err != nil {
 		return "", fmt.Errorf("failed to read clickhouse response: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("clickhouse error (HTTP %d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		errMsg := strings.TrimSpace(string(body))
+		if len(errMsg) > 500 {
+			errMsg = errMsg[:500] + "..."
+		}
+		return "", fmt.Errorf("clickhouse error (HTTP %d): %s", resp.StatusCode, errMsg)
 	}
 
 	return string(body), nil

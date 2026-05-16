@@ -85,7 +85,11 @@ func (a *ManagementAPI) Stop() {
 }
 
 func (a *ManagementAPI) listMappings(c *gin.Context) {
-	c.JSON(http.StatusOK, a.registry.GetAll())
+	mappings := a.registry.GetAll()
+	if mappings == nil {
+		mappings = []schema.CollectionMapping{}
+	}
+	c.JSON(http.StatusOK, mappings)
 }
 
 func (a *ManagementAPI) getMapping(c *gin.Context) {
@@ -136,8 +140,13 @@ func (a *ManagementAPI) createMapping(c *gin.Context) {
 	if mapping.Engine == "" {
 		mapping.Engine = "ReplacingMergeTree"
 	}
-	if !mapping.Enabled {
-		mapping.Enabled = true
+	// Default to enabled for new mappings; respect explicit false from client
+	if mapping.Collection != "" && !mapping.Enabled {
+		// Only default to true if this is a brand new mapping (not an update)
+		existing := a.registry.Get(mapping.Collection)
+		if existing == nil {
+			mapping.Enabled = true
+		}
 	}
 
 	created := a.registry.Upsert(mapping)
