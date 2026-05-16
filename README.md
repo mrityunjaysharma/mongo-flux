@@ -42,15 +42,15 @@ Tested 5 complex aggregation queries (2D/3D GROUP BY, conditional counts, date b
 
 ```mermaid
 xychart-beta
-    title "Avg Query Latency by Data Size (log₁₀ ms)"
+    title "Avg Query Latency by Data Size (ms)"
     x-axis ["100", "500", "1K", "5K", "10K", "50K", "100K", "500K", "1M", "2M"]
-    y-axis "log₁₀(Latency ms)" 0 --> 3.5
-    line [0.04, 0.30, 0.41, 0.87, 1.12, 1.74, 2.01, 2.75, 3.06, 3.46]
-    line [0.04, 0.26, 0.38, 0.96, 1.12, 1.85, 2.05, 2.71, 3.04, 3.44]
-    line [0.73, 0.81, 0.68, 1.01, 0.73, 0.94, 0.92, 1.05, 1.12, 1.33]
+    y-axis "Latency (ms)" 0 --> 200
+    line [1.1, 2.0, 2.6, 7.4, 13.3, 55.4, 102.1, 200, 200, 200]
+    line [1.1, 1.8, 2.4, 9.2, 13.2, 70.6, 111.6, 200, 200, 200]
+    line [5.4, 6.4, 4.8, 10.3, 5.4, 8.7, 8.4, 11.2, 13.1, 21.5]
 ```
 
-> Lines: MongoDB (blue), MongoDB+Index (green), MongoFlux (red). Values are log₁₀(ms) — e.g., 1.0 = 10ms, 2.0 = 100ms, 3.0 = 1000ms.
+> MongoDB and Mongo+Index lines are capped at 200ms for readability — actual values at 500K/1M/2M are 563/1,139/2,854ms and 515/1,085/2,745ms respectively. MongoFlux (red) stays flat at 5-21ms regardless of data size.
 
 | Size | MongoDB | Mongo+Index | MongoFlux | Speedup | Winner |
 |:-----|:--------|:------------|:----------|:--------|:-------|
