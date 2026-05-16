@@ -1,30 +1,30 @@
-# MongoFlux configuration
-# For production, override sensitive values via environment variables.
-
 mongo:
-  uri: "mongodb://localhost:27017"  # Override: MG_MONGO_URI
-  database: "myapp"                 # Override: MG_MONGO_DB
+  uri: "mongodb://localhost:27017"
+  database: "myapp"
 
 clickhouse:
-  host: "localhost"                 # Override: MG_CH_HOST
-  port: 8123                        # Override: MG_CH_PORT
-  database: "analytics"             # Override: MG_CH_DB
-  user: "default"                   # Override: MG_CH_USER
-  password: ""                      # Override: MG_CH_PASSWORD (use env var in production)
+  host: "localhost"
+  port: 8123
+  database: "analytics"
+  user: "default"
+  password: ""
 
 sync:
-  mode: "oplog"                     # "oplog" (direct replica set) or "changestream" (Atlas/sharded)
-  batch_size: 1000                  # Rows per flush (1-1000000)
-  flush_interval_ms: 500            # Max ms between flushes (1-60000)
+  mode: "oplog"
+  batch_size: 1000
+  flush_interval_ms: 500
   resume_token_path: "/var/lib/mongoflux/resume_tokens"
+  max_pending_rows: 100000
+  propagate_deletes: false
+  delete_column: "_deleted"
 
 api:
   port: 9090
   bind: "0.0.0.0"
 
 routing:
-  clickhouse_param: "clickhouse"    # URI parameter that triggers ClickHouse routing
+  clickhouse_param: "clickhouse"
 
 logging:
-  level: "info"                     # debug, info, warn, error
-  file: ""                          # Empty = stdout only
+  level: "info"
+  file: ""
