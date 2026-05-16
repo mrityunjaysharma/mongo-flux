@@ -314,6 +314,6 @@ internal/
   translator/      Two-phase query translator (BSON → AST → SQL)
 ```
 
-## License
+## Contributing
 
-Apache-2.0
+Contributions are welcome. Please open an issue to discuss before submitting large changes.
