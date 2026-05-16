@@ -25,7 +25,7 @@ MongoFlux eliminates all of that. Your app talks to one place for both reads and
 
 ## Architecture
 
-MongoDB runs as a 3-node replica set (1 primary + 2 secondaries). The application connects to MongoFlux for reads. If the connection URI contains `?clickhouse=true`, MongoFlux translates the query to SQL and sends it to ClickHouse. Otherwise it forwards to MongoDB unchanged. Writes go directly to the primary. MongoFlux tails the oplog asynchronously to replicate data to ClickHouse — making ClickHouse behave like a "virtual secondary."
+MongoDB runs as a 3-node replica set (1 primary + 2 secondaries). The application connects to MongoFlux for reads. If the connection URI contains `?clickhouse=true`, MongoFlux translates the query to SQL and sends it to ClickHouse. Otherwise it forwards to a MongoDB secondary unchanged. Writes go directly to the primary. MongoFlux tails the oplog asynchronously to replicate data to ClickHouse — making ClickHouse behave like a "virtual secondary."
 
 ```mermaid
 flowchart TD
@@ -39,7 +39,7 @@ flowchart TD
     APP -->|"reads (find/aggregate)"| ROUTER[Query Router]
     ROUTER -->|"clickhouse=true"| XLAT[Query Translator]
     XLAT -->|SQL| CH
-    ROUTER -->|"clickhouse=false"| MGP
+    ROUTER -->|"clickhouse=false"| MGS1
 
     SYNC -.->|lookup| REG[Schema Registry]
     XLAT -.->|lookup| REG
@@ -91,8 +91,8 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     App->>MongoFlux: find({_id: "abc123"}) [no clickhouse param]
-    MongoFlux->>MongoDB Primary: forward query unchanged
-    MongoDB Primary-->>App: results
+    MongoFlux->>MongoDB Secondary: forward query unchanged
+    MongoDB Secondary-->>App: results
 ```
 
 ### Schema Mapping (What Gets Synced)

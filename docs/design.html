@@ -87,7 +87,7 @@
 
 <h2>Architecture</h2>
 
-<p>MongoDB runs as a 3-node replica set. The application connects to MongoFlux for reads. If the URI contains <code>?clickhouse=true</code>, MongoFlux translates the query to SQL and sends it to ClickHouse. Otherwise it forwards to MongoDB unchanged. Writes go directly to the primary. MongoFlux tails the oplog asynchronously — making ClickHouse behave like a "virtual secondary."</p>
+<p>MongoDB runs as a 3-node replica set. The application connects to MongoFlux for reads. If the URI contains <code>?clickhouse=true</code>, MongoFlux translates the query to SQL and sends it to ClickHouse. Otherwise it forwards to a MongoDB secondary unchanged. Writes go directly to the primary. MongoFlux tails the oplog asynchronously — making ClickHouse behave like a "virtual secondary."</p>
 
 <div class="mermaid">
 flowchart TD
@@ -101,7 +101,7 @@ flowchart TD
     APP -->|"reads (find/aggregate)"| ROUTER[Query Router]
     ROUTER -->|"clickhouse=true"| XLAT[Query Translator]
     XLAT -->|SQL| CH
-    ROUTER -->|"clickhouse=false"| MGP
+    ROUTER -->|"clickhouse=false"| MGS1
 
     SYNC -.->|lookup| REG[Schema Registry]
     XLAT -.->|lookup| REG
@@ -109,7 +109,7 @@ flowchart TD
 </div>
 
 <div class="highlight">
-    <strong>Key insight:</strong> Writes go to MongoDB unchanged (zero overhead). Secondaries provide HA. MongoFlux routes reads — analytics to ClickHouse, everything else to MongoDB. Your app uses one interface for everything. No split paths, no code changes.
+    <strong>Key insight:</strong> Writes go to MongoDB primary (zero overhead). MongoFlux routes reads — analytics to ClickHouse, everything else to a MongoDB secondary. Your app uses one interface for everything. No split paths, no code changes.
 </div>
 
 <hr class="separator">
@@ -155,8 +155,8 @@ sequenceDiagram
 <div class="mermaid">
 sequenceDiagram
     App->>MongoFlux: find({_id: "abc123"}) [no clickhouse param]
-    MongoFlux->>MongoDB Primary: forward query unchanged
-    MongoDB Primary-->>App: results
+    MongoFlux->>MongoDB Secondary: forward query unchanged
+    MongoDB Secondary-->>App: results
 </div>
 
 <h3>Query Translation (BSON → AST → SQL)</h3>

@@ -27,14 +27,14 @@ flowchart TD
     %% Read routing
     APP -->|"analytical reads (find/aggregate)"| MF
     MF -->|"clickhouse=true → SQL"| CH
-    MF -->|"clickhouse=false → passthrough"| MGP
+    MF -->|"clickhouse=false → passthrough"| S1
 ```
 
 Three things happen:
 
 1. **Writes** go directly to MongoDB. MongoFlux is not in the write path at all.
 2. **Replication** — MongoFlux opens a tailable-await cursor on `local.oplog.rs` (same mechanism secondaries use), extracts the fields you've mapped, batches them, and flushes to ClickHouse via HTTP. It persists oplog timestamps so it can resume after a crash.
-3. **Reads** — your app sends queries to MongoFlux. If the URI has `?clickhouse=true` (or `1`/`yes`), the query gets translated to SQL and executed on ClickHouse. Otherwise it's forwarded to MongoDB unchanged.
+3. **Reads** — your app sends queries to MongoFlux. If the URI has `?clickhouse=true` (or `1`/`yes`), the query gets translated to SQL and executed on ClickHouse. Otherwise it's forwarded to a MongoDB secondary unchanged.
 
 The query translator uses a two-phase AST approach: BSON → expression tree → ClickHouse SQL. It handles `find()` and `aggregate()` with most common operators — see the full list below.
 
