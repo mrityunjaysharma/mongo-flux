@@ -15,22 +15,19 @@ No ETL. No batch jobs. No data staleness.
 ## How it works
 
 ```mermaid
-flowchart LR
-    subgraph writes ["Write Path (unchanged)"]
-        APP1[App] -->|insert/update/delete| MGP[(MongoDB Primary)]
+flowchart TD
+    subgraph write_sync ["Write + Sync Path"]
+        APP1[Application] -->|"writes"| MGP[(MongoDB Primary)]
         MGP -->|replication| S1[(Secondary 1)]
         MGP -->|replication| S2[(Secondary 2)]
+        MGP -->|"oplog tail (async)"| MF[MongoFlux]
+        MF -->|"batch INSERT"| CH[(ClickHouse)]
     end
 
-    subgraph reads ["Read Path (via MongoFlux)"]
-        APP2[App] -->|"find() / aggregate()"| MF[MongoFlux Proxy]
-        MF -->|"clickhouse=true"| CH[(ClickHouse)]
-        MF -->|"clickhouse=false"| MGP2[(MongoDB)]
-    end
-
-    subgraph sync ["Sync (background)"]
-        MGP3[(MongoDB Primary)] -->|"oplog tail (async)"| MF2[MongoFlux]
-        MF2 -->|"batch INSERT every 500ms"| CH2[(ClickHouse)]
+    subgraph read_path ["Read Path"]
+        APP2[Application] -->|"find() / aggregate()"| MF2[MongoFlux Proxy]
+        MF2 -->|"clickhouse=true"| CH2[(ClickHouse)]
+        MF2 -->|"clickhouse=false"| MGP2[(MongoDB)]
     end
 ```
 
