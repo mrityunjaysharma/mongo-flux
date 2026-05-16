@@ -216,29 +216,49 @@ def test_insert_single(coll: pymongo.collection.Collection) -> None:
 
 
 def test_insert_batch(coll: pymongo.collection.Collection) -> None:
-    """Verify a batch of 100 inserts syncs to ClickHouse."""
-    categories = ["Infrastructure", "Application", "Security", "Network"]
-    regions = ["US", "EU", "APAC", "LATAM"]
-    statuses = ["active", "resolved", "acknowledged", "suppressed"]
+    """Verify a batch of 1,000,000 inserts syncs to ClickHouse."""
+    categories = ["Infrastructure", "Application", "Security", "Network", "Database", "Storage", "Compute", "Messaging"]
+    regions = ["US", "EU", "APAC", "LATAM", "MEA", "ANZ"]
+    statuses = ["active", "resolved", "acknowledged", "suppressed", "escalated", "closed"]
 
-    docs = [
-        {
-            "name": f"Batch Alert {i}",
-            "category": random.choice(categories),
-            "region": random.choice(regions),
-            "status": random.choice(statuses),
-            "value": random.randint(1, 100),
-            "score": round(random.uniform(0, 100), 2),
-            "createdAt": datetime(2025, 1, 1) + timedelta(days=random.randint(0, 150)),
-            "tags": json.dumps(random.sample(["critical", "prod", "staging", "low", "high"], 2)),
-            "active": random.choice([True, False]),
-        }
-        for i in range(100)
-    ]
+    batch_size = 10000
+    total = 1000000
+    inserted = 0
 
-    coll.insert_many(docs)
-    count = wait_for_sync(101)
-    print_result("INSERT batch (100 docs) → synced", count >= 101, f"CH rows: {count}")
+    print(f"  Inserting {total:,} documents in batches of {batch_size:,}...")
+    t0 = time.perf_counter()
+
+    for batch_start in range(0, total, batch_size):
+        current_batch = min(batch_size, total - batch_start)
+        docs = [
+            {
+                "name": f"Alert {batch_start + i}",
+                "category": random.choice(categories),
+                "region": random.choice(regions),
+                "status": random.choice(statuses),
+                "value": random.randint(1, 10000),
+                "score": round(random.uniform(0, 100), 2),
+                "createdAt": datetime(2024, 1, 1) + timedelta(seconds=random.randint(0, 365 * 24 * 3600)),
+                "tags": json.dumps(random.sample(["critical", "prod", "staging", "low", "high", "p1", "p2", "infra"], 3)),
+                "active": random.choice([True, False]),
+            }
+            for i in range(current_batch)
+        ]
+        coll.insert_many(docs, ordered=False)
+        inserted += current_batch
+        if inserted % 100000 == 0:
+            elapsed = time.perf_counter() - t0
+            rate = inserted / elapsed
+            print(f"    {inserted:>10,} inserted ({rate:,.0f} docs/s)")
+
+    elapsed = time.perf_counter() - t0
+    print(f"  Insert complete: {total:,} docs in {elapsed:.1f}s ({total/elapsed:,.0f} docs/s)")
+
+    # Wait for sync — give it more time for 1M records
+    print(f"  Waiting for ClickHouse sync...")
+    expected = total + 1  # +1 for the single insert test
+    count = wait_for_sync(expected, timeout=120)
+    print_result(f"INSERT batch ({total:,} docs) → synced", count >= expected, f"CH rows: {count:,}")
 
 
 def test_update(coll: pymongo.collection.Collection) -> None:
@@ -270,8 +290,8 @@ def test_stream_continuity(coll: pymongo.collection.Collection) -> None:
         "tags": json.dumps(["continuity-test"]),
         "active": True,
     })
-    count = wait_for_sync(102)
-    print_result("INSERT after UPDATE → stream continuity", count >= 102, f"CH rows: {count}")
+    count = wait_for_sync(1000002, timeout=30)
+    print_result("INSERT after UPDATE → stream continuity", count >= 1000002, f"CH rows: {count:,}")
 
 
 # ============================================================
