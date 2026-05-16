@@ -25,6 +25,10 @@ api:
   port: 9090
   bind: "0.0.0.0"
 
+proxy:
+  port: 27020
+  bind: "0.0.0.0"
+
 routing:
   clickhouse_param: "clickhouse"
 

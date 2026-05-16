@@ -61,12 +61,19 @@ logger = logging.getLogger(__name__)
 
 # ============================================================
 # Configuration
+#
+# The application connects ONLY to MongoFlux wire proxy (port 27020):
+#   - Writes: forwarded to MongoDB primary internally
+#   - Reads:  routed to ClickHouse (mapped collections) or MongoDB secondary
+#
+# MongoFlux handles all routing transparently. The app uses one connection string.
+# ClickHouse URL is only used by the benchmark to verify sync independently.
 # ============================================================
 
-MONGO_URI = os.environ.get("MONGO_URI", "mongodb://localhost:27017/?directConnection=true")
+MONGOFLUX_WIRE = os.environ.get("MONGOFLUX_WIRE", "mongodb://localhost:27020/?directConnection=true")
 MONGO_DB = os.environ.get("MONGO_DB", "myapp")
 MONGO_COLLECTION = "mongoflux_test"
-CH_URL = os.environ.get("CH_URL", "http://localhost:8123")
+CH_URL = os.environ.get("CH_URL", "http://localhost:8123")  # benchmark verification only
 CH_DB = os.environ.get("CH_DB", "myapp")
 CH_TABLE = "mongoflux_test"
 MONGOFLUX_API = os.environ.get("MONGOFLUX_API", "http://localhost:9090")
@@ -120,7 +127,8 @@ def wait_for_sync(expected_count: int, timeout: int = 15) -> int:
 
 
 def get_mongo_client():
-    return pymongo.MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+    """Connect to MongoFlux wire proxy. All reads and writes go through here."""
+    return pymongo.MongoClient(MONGOFLUX_WIRE, serverSelectionTimeoutMS=5000)
 
 
 # ============================================================
@@ -382,9 +390,9 @@ def run_full_test(record_count: int = TEST_RECORDS) -> Dict[str, Any]:
     results = {
         "timestamp": datetime.now().isoformat(),
         "config": {
-            "mongo_uri": MONGO_URI,
-            "ch_url": CH_URL,
+            "mongoflux_wire": MONGOFLUX_WIRE,
             "mongoflux_api": MONGOFLUX_API,
+            "ch_url": CH_URL,
             "record_count": record_count,
         },
     }
@@ -517,22 +525,166 @@ class TestHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 self.send_json({"error": str(e)}, 500)
 
+        elif path.startswith("/data"):
+            # GET /data - fetch documents from MongoDB
+            #   (In production, this would go through MongoFlux proxy.
+            #    MongoFlux routes to ClickHouse or MongoDB based on ?clickhouse=true.
+            #    Here we read from MongoDB directly to simulate the app's perspective.)
+            # GET /data?limit=N&skip=M&status=X&region=Y - filtered fetch
+            # GET /data/<id> - fetch single document by _id
+            try:
+                client = get_mongo_client()
+                coll = client[MONGO_DB][MONGO_COLLECTION]
+                parts = path.rstrip("/").split("/")
+
+                if len(parts) > 2 and parts[2]:
+                    # GET /data/<id>
+                    doc_id = parts[2]
+                    from bson import ObjectId
+                    try:
+                        doc = coll.find_one({"_id": ObjectId(doc_id)})
+                    except Exception:
+                        doc = coll.find_one({"_id": doc_id})
+                    if doc:
+                        doc["_id"] = str(doc["_id"])
+                        if isinstance(doc.get("createdAt"), datetime):
+                            doc["createdAt"] = doc["createdAt"].isoformat()
+                        self.send_json(doc)
+                    else:
+                        self.send_json({"error": "not found"}, 404)
+                else:
+                    # GET /data?limit=N&skip=M&status=X&region=Y
+                    limit = int(params.get("limit", ["100"])[0])
+                    skip = int(params.get("skip", ["0"])[0])
+                    query_filter = {}
+                    for field in ["status", "region", "category", "name"]:
+                        if field in params:
+                            query_filter[field] = params[field][0]
+                    if "active" in params:
+                        query_filter["active"] = params["active"][0].lower() in ("true", "1", "yes")
+
+                    cursor = coll.find(query_filter).skip(skip).limit(limit).sort("createdAt", -1)
+                    docs = []
+                    for doc in cursor:
+                        doc["_id"] = str(doc["_id"])
+                        if isinstance(doc.get("createdAt"), datetime):
+                            doc["createdAt"] = doc["createdAt"].isoformat()
+                        docs.append(doc)
+
+                    total = coll.count_documents(query_filter)
+                    self.send_json({
+                        "data": docs,
+                        "total": total,
+                        "limit": limit,
+                        "skip": skip,
+                        "filter": query_filter,
+                    })
+                client.close()
+            except Exception as e:
+                self.send_json({"error": str(e)}, 500)
+
         else:
             self.send_json({
                 "endpoints": {
                     "GET /health": "Health check",
-                    "GET /status": "Show current data counts",
+                    "GET /status": "Show current data counts (MongoDB + ClickHouse)",
                     "GET /run?records=1000000": "Run full test suite (setup + load + benchmark)",
-                    "GET /benchmark": "Run benchmark only (data must exist)",
-                    "GET /cleanup": "Remove test data",
+                    "GET /benchmark": "Run benchmark: same queries on MongoDB vs ClickHouse",
+                    "GET /data": "Fetch documents. Params: limit, skip, status, region, category, active",
+                    "GET /data/<id>": "Fetch single document by ID",
+                    "POST /data": "Insert one or many documents (body: object or array)",
+                    "DELETE /data/<id>": "Delete single document",
+                    "DELETE /data?status=X": "Delete documents matching filter",
+                    "GET /cleanup": "Remove all test data",
                 },
+                "note": "App writes to MongoDB directly. MongoFlux replicates to ClickHouse via oplog. GET /benchmark compares query speed on both engines.",
                 "config": {
-                    "mongo_uri": MONGO_URI,
-                    "ch_url": CH_URL,
+                    "mongoflux_wire": MONGOFLUX_WIRE,
                     "mongoflux_api": MONGOFLUX_API,
+                    "ch_url": CH_URL,
                     "default_records": TEST_RECORDS,
                 },
             })
+
+    def do_POST(self):
+        parsed = urlparse(self.path)
+        path = parsed.path
+
+        if path == "/data":
+            # POST /data - insert documents
+            # Body: single object or array of objects
+            try:
+                content_length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(content_length).decode()
+                payload = json.loads(body)
+
+                client = get_mongo_client()
+                coll = client[MONGO_DB][MONGO_COLLECTION]
+
+                if isinstance(payload, list):
+                    # Batch insert
+                    for doc in payload:
+                        if "createdAt" not in doc:
+                            doc["createdAt"] = datetime.now()
+                        elif isinstance(doc["createdAt"], str):
+                            doc["createdAt"] = datetime.fromisoformat(doc["createdAt"])
+                    result = coll.insert_many(payload)
+                    ids = [str(oid) for oid in result.inserted_ids]
+                    self.send_json({"inserted": len(ids), "ids": ids}, 201)
+                else:
+                    # Single insert
+                    if "createdAt" not in payload:
+                        payload["createdAt"] = datetime.now()
+                    elif isinstance(payload["createdAt"], str):
+                        payload["createdAt"] = datetime.fromisoformat(payload["createdAt"])
+                    result = coll.insert_one(payload)
+                    self.send_json({"inserted": 1, "id": str(result.inserted_id)}, 201)
+
+                client.close()
+            except json.JSONDecodeError as e:
+                self.send_json({"error": f"Invalid JSON: {e}"}, 400)
+            except Exception as e:
+                self.send_json({"error": str(e)}, 500)
+        else:
+            self.send_json({"error": "not found"}, 404)
+
+    def do_DELETE(self):
+        parsed = urlparse(self.path)
+        path = parsed.path
+        params = parse_qs(parsed.query)
+
+        if path.startswith("/data"):
+            try:
+                parts = path.rstrip("/").split("/")
+                client = get_mongo_client()
+                coll = client[MONGO_DB][MONGO_COLLECTION]
+
+                if len(parts) > 2 and parts[2]:
+                    # DELETE /data/<id>
+                    doc_id = parts[2]
+                    from bson import ObjectId
+                    try:
+                        result = coll.delete_one({"_id": ObjectId(doc_id)})
+                    except Exception:
+                        result = coll.delete_one({"_id": doc_id})
+                    self.send_json({"deleted": result.deleted_count})
+                else:
+                    # DELETE /data?status=X&region=Y
+                    query_filter = {}
+                    for field in ["status", "region", "category", "name"]:
+                        if field in params:
+                            query_filter[field] = params[field][0]
+                    if not query_filter:
+                        self.send_json({"error": "Provide at least one filter param to avoid accidental deletion. Use GET /cleanup to drop all."}, 400)
+                    else:
+                        result = coll.delete_many(query_filter)
+                        self.send_json({"deleted": result.deleted_count, "filter": query_filter})
+
+                client.close()
+            except Exception as e:
+                self.send_json({"error": str(e)}, 500)
+        else:
+            self.send_json({"error": "not found"}, 404)
 
 
 # ============================================================
@@ -627,10 +779,10 @@ def main() -> None:
     print(f"    GET /benchmark     - Run benchmark only")
     print(f"    GET /cleanup       - Remove test data")
     print(f"\n  Config:")
-    print(f"    MongoDB:    {MONGO_URI}")
-    print(f"    ClickHouse: {CH_URL}")
-    print(f"    MongoFlux:  {MONGOFLUX_API}")
-    print(f"    Records:    {TEST_RECORDS:,}")
+    print(f"    MongoFlux Wire: {MONGOFLUX_WIRE}")
+    print(f"    MongoFlux API:  {MONGOFLUX_API}")
+    print(f"    ClickHouse:     {CH_URL} (benchmark verification only)")
+    print(f"    Records:        {TEST_RECORDS:,}")
     print()
 
     try:

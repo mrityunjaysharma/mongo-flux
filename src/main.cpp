@@ -13,6 +13,7 @@
 #include "mongoflux/query_translator.h"
 #include "mongoflux/mongo_proxy.h"
 #include "mongoflux/management_api.h"
+#include "mongoflux/wire_proxy.h"
 
 static std::atomic<bool> g_running{true};
 
@@ -87,6 +88,13 @@ int main(int argc, char* argv[]) {
     // Management API (uses change_stream_sync for the restart endpoint)
     auto api = std::make_shared<mongoflux::ManagementApi>(config.api, registry, ch_client, cs_sync, oplog_sync);
 
+    // Wire protocol proxy — applications connect here with standard MongoDB drivers
+    mongoflux::WireProxy::ProxyConfig wire_config;
+    wire_config.listen_port = 27020;
+    wire_config.listen_bind = config.api.bind;
+    wire_config.clickhouse_routing = true;
+    auto wire_proxy = std::make_shared<mongoflux::WireProxy>(config, wire_config, registry, ch_client, translator);
+
     // Set up signal handlers
     std::signal(SIGINT, signal_handler);
     std::signal(SIGTERM, signal_handler);
@@ -103,7 +111,11 @@ int main(int argc, char* argv[]) {
     std::cout << "[mongoflux] Starting management API on port " << config.api.port << std::endl;
     api->start();
 
+    std::cout << "[mongoflux] Starting wire protocol proxy on port " << wire_config.listen_port << std::endl;
+    wire_proxy->start();
+
     std::cout << "[mongoflux] MongoFlux is running. Press Ctrl+C to stop." << std::endl;
+    std::cout << "[mongoflux] Connect your app: mongodb://localhost:" << wire_config.listen_port << "/" << config.mongo.database << std::endl;
 
     // Main loop
     while (g_running.load()) {
@@ -114,6 +126,7 @@ int main(int argc, char* argv[]) {
     std::cout << "\n[mongoflux] Shutting down..." << std::endl;
 
     api->stop();
+    wire_proxy->stop();
     oplog_sync->stop();
     cs_sync->stop();
 

@@ -55,6 +55,7 @@ set(MONGOFLUX_SOURCES
     src/mongo_proxy.cpp
     src/management_api.cpp
     src/routing.cpp
+    src/wire_proxy.cpp
 )
 
 # Library target
