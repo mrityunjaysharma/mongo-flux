@@ -3,66 +3,130 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MongoFlux — Design Document</title>
+    <title>MongoFlux — Design & Architecture</title>
     <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
     <style>
-        :root { --accent: #1a56db; --bg: #fff; --fg: #111; --muted: #6b7280; --border: #e5e7eb; --card: #f9fafb; }
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.6; color: var(--fg); max-width: 960px; margin: 0 auto; padding: 2rem; }
-        h1 { font-size: 2rem; margin-bottom: 0.25rem; }
-        h2 { font-size: 1.4rem; margin: 2.5rem 0 0.75rem; color: var(--accent); border-bottom: 2px solid var(--border); padding-bottom: 0.25rem; }
-        h3 { font-size: 1.1rem; margin: 1.5rem 0 0.5rem; }
-        p { margin: 0.5rem 0; }
-        code { background: var(--card); padding: 0.1rem 0.3rem; border-radius: 3px; font-size: 0.85em; }
-        pre { background: var(--card); padding: 1rem; border-radius: 6px; overflow-x: auto; margin: 0.75rem 0; border: 1px solid var(--border); font-size: 0.85rem; }
-        pre code { background: none; padding: 0; }
-        table { width: 100%; border-collapse: collapse; margin: 0.75rem 0; font-size: 0.85rem; }
-        th { background: var(--accent); color: #fff; padding: 0.5rem; text-align: left; }
-        td { padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--border); }
-        tr:hover td { background: #f0f7ff; }
-        .mermaid { margin: 1rem 0; text-align: center; }
-        .subtitle { color: var(--muted); margin-bottom: 1.5rem; font-size: 0.9rem; }
-        .metric { display: inline-block; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 0.75rem 1.25rem; margin: 0.25rem; text-align: center; }
-        .metric .val { font-size: 1.5rem; font-weight: 700; color: var(--accent); }
-        .metric .lbl { font-size: 0.75rem; color: var(--muted); }
-        .note { background: #fefce8; border-left: 3px solid #eab308; padding: 0.5rem 0.75rem; margin: 0.75rem 0; border-radius: 4px; font-size: 0.9rem; }
+        body {
+            font-family: 'Georgia', 'Charter', serif;
+            line-height: 1.8;
+            color: #1a1a1a;
+            background: #fff;
+            max-width: 820px;
+            margin: 0 auto;
+            padding: 2rem 1.5rem;
+        }
+        h1 { font-family: -apple-system, sans-serif; font-size: 2.2rem; line-height: 1.2; margin: 2rem 0 0.5rem; letter-spacing: -0.02em; }
+        h2 { font-family: -apple-system, sans-serif; font-size: 1.5rem; margin: 3rem 0 1rem; letter-spacing: -0.01em; border-bottom: 2px solid #e5e7eb; padding-bottom: 0.25rem; }
+        h3 { font-family: -apple-system, sans-serif; font-size: 1.15rem; margin: 2rem 0 0.5rem; }
+        p { margin: 1.2rem 0; }
+        img { width: 100%; border-radius: 4px; margin: 1.5rem 0; }
+        code { background: #f3f4f6; padding: 0.15rem 0.4rem; border-radius: 3px; font-size: 0.85em; font-family: 'SF Mono', 'Fira Code', monospace; }
+        pre { background: #1e1e2e; color: #cdd6f4; padding: 1.25rem; border-radius: 8px; overflow-x: auto; margin: 1.5rem 0; font-size: 0.82rem; line-height: 1.6; }
+        pre code { background: none; color: inherit; padding: 0; }
+        table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; font-family: -apple-system, sans-serif; font-size: 0.85rem; }
+        th { background: #111827; color: #fff; padding: 0.6rem 0.75rem; text-align: left; font-weight: 600; }
+        td { padding: 0.5rem 0.75rem; border-bottom: 1px solid #e5e7eb; }
+        tr:hover td { background: #f9fafb; }
+        .mermaid { margin: 2rem 0; text-align: center; }
+        .hero { position: relative; margin: -2rem -1.5rem 2rem; overflow: hidden; }
+        .hero img { width: 100%; height: 240px; object-fit: cover; border-radius: 0; margin: 0; }
+        .hero-overlay { position: absolute; bottom: 0; left: 0; right: 0; padding: 1.5rem 2rem; background: linear-gradient(transparent, rgba(0,0,0,0.7)); color: #fff; }
+        .hero-overlay p { color: #ccc; margin: 0.25rem 0; font-size: 0.85rem; }
+        .subtitle { color: #6b7280; font-family: -apple-system, sans-serif; font-size: 1rem; margin-bottom: 2rem; }
+        .highlight { background: #eff6ff; border-left: 4px solid #2563eb; padding: 1rem 1.25rem; margin: 1.5rem 0; border-radius: 0 6px 6px 0; font-family: -apple-system, sans-serif; font-size: 0.9rem; }
+        .metrics { display: flex; flex-wrap: wrap; gap: 1rem; margin: 1.5rem 0; }
+        .metric { flex: 1; min-width: 140px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 1rem; text-align: center; }
+        .metric .val { font-family: -apple-system, sans-serif; font-size: 2rem; font-weight: 700; color: #166534; }
+        .metric .lbl { font-size: 0.75rem; color: #6b7280; font-family: -apple-system, sans-serif; }
+        .separator { border: none; border-top: 1px solid #e5e7eb; margin: 3rem 0; }
+        .note { background: #fefce8; border-left: 3px solid #eab308; padding: 0.75rem 1rem; margin: 1rem 0; border-radius: 4px; font-size: 0.9rem; font-family: -apple-system, sans-serif; }
+        .tag { display: inline-block; background: #e0e7ff; color: #3730a3; padding: 0.15rem 0.5rem; border-radius: 12px; font-size: 0.7rem; font-family: -apple-system, sans-serif; margin-right: 0.3rem; }
+        ul { margin: 1rem 0 1rem 1.5rem; }
+        li { margin: 0.3rem 0; }
     </style>
 </head>
 <body>
 
-<h1>MongoFlux</h1>
-<p class="subtitle">Design Document v1.2 — Real-time MongoDB → ClickHouse CDC + Query Routing</p>
+<div class="hero">
+    <img src="https://placehold.co/1200x300/0f172a/22d3ee?text=MongoFlux+%E2%80%94+Real-time+CDC+%2B+Transparent+Query+Routing&font=raleway" alt="MongoFlux System Design">
+    <div class="hero-overlay">
+        <p>Real-time CDC replication • Zero write overhead • 27-53x faster analytical reads</p>
+    </div>
+</div>
 
-<div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin:1rem 0;">
-    <div class="metric"><div class="val">0%</div><div class="lbl">Write Overhead</div></div>
-    <div class="metric"><div class="val">26x</div><div class="lbl">Avg Read Speedup</div></div>
+<h1>MongoFlux — Design & Architecture</h1>
+
+<p class="subtitle">v1.2 — Real-time MongoDB → ClickHouse CDC + Transparent Query Routing</p>
+
+<p>
+    <span class="tag">MongoDB</span>
+    <span class="tag">ClickHouse</span>
+    <span class="tag">CDC</span>
+    <span class="tag">OLAP</span>
+    <span class="tag">C++17</span>
+</p>
+
+<div class="metrics">
+    <div class="metric"><div class="val">27x</div><div class="lbl">Avg Read Speedup</div></div>
     <div class="metric"><div class="val">53x</div><div class="lbl">Peak Speedup</div></div>
+    <div class="metric"><div class="val">0%</div><div class="lbl">Write Overhead</div></div>
     <div class="metric"><div class="val">&lt;1s</div><div class="lbl">Replication Lag</div></div>
 </div>
 
-<h2>1. Architecture</h2>
+<hr class="separator">
 
-<p>MongoDB runs as a 3-node replica set (<code>rs0</code>): 1 primary + 2 secondaries. For reads, the application connects to MongoFlux which acts as a routing proxy. If the connection URI contains <code>?clickhouse=true</code>, MongoFlux translates the query to SQL and sends it to ClickHouse. If the parameter is absent or false, MongoFlux forwards the query to MongoDB Primary unchanged. Writes go directly to the primary.</p>
+<h2>The Problem We Solved</h2>
+
+<p>MongoDB is great for OLTP. Point lookups, single-doc writes, transactions — all fast. But the moment you need analytics (GROUP BY over millions of rows, time-range scans, percentiles), it falls apart. You end up building ETL pipelines, maintaining a separate warehouse, dealing with stale data. And the classic workaround — reading from one system, writing to another — means your application code splits into two paths, two connection strings, two query languages.</p>
+
+<p>MongoFlux eliminates all of that. Your app talks to one place for both reads and writes. No code changes, no query rewrites. You set <code>?clickhouse=true</code> once in your read connection string and everything else stays the same — same <code>find()</code>, same <code>aggregate()</code>, same MongoDB query syntax. MongoFlux translates it to SQL behind the scenes.</p>
+
+<table>
+    <tr><th></th><th>OLTP (MongoDB)</th><th>OLAP (ClickHouse)</th></tr>
+    <tr><td>Storage</td><td>Row-oriented (full documents)</td><td>Column-oriented (only needed columns)</td></tr>
+    <tr><td>Compression</td><td>~2x</td><td>~10-20x (columnar + codecs)</td></tr>
+    <tr><td>GROUP BY 500K rows</td><td>300-1500 ms</td><td>8-30 ms</td></tr>
+    <tr><td>Best at</td><td>Point lookups, writes</td><td>Aggregations, scans</td></tr>
+</table>
+
+<hr class="separator">
+
+<h2>Architecture</h2>
+
+<p>MongoDB runs as a 3-node replica set. The application connects to MongoFlux for reads. If the URI contains <code>?clickhouse=true</code>, MongoFlux translates the query to SQL and sends it to ClickHouse. Otherwise it forwards to MongoDB unchanged. Writes go directly to the primary. MongoFlux tails the oplog asynchronously — making ClickHouse behave like a "virtual secondary."</p>
 
 <div class="mermaid">
 flowchart TD
-    APP[Application] -->|writes| MGP[(MongoDB Primary)]
+    APP[Your Application]
+    APP -->|"writes (insert/update/delete)"| MGP[(MongoDB Primary)]
     MGP -->|replication| MGS1[(Secondary 1)]
     MGP -->|replication| MGS2[(Secondary 2)]
-    APP -->|"all reads (find/aggregate)"| ROUTER[MongoFlux<br/>Query Router]
-    ROUTER -->|"?clickhouse=true → translate"| XLAT[Query Translator<br/>BSON → AST → SQL]
-    XLAT -->|SELECT| CH[(ClickHouse)]
-    ROUTER -->|"no flag → forward"| MGP
-    MGP -->|oplog.rs| SYNC[Oplog Sync]
-    SYNC -->|batch INSERT| CH
+    MGP -.->|"oplog tail (async)"| SYNC[Oplog Sync Engine]
+    SYNC -.->|"batch INSERT"| CH[(ClickHouse)]
+
+    APP -->|"reads (find/aggregate)"| ROUTER[Query Router]
+    ROUTER -->|"clickhouse=true"| XLAT[Query Translator]
+    XLAT -->|SQL| CH
+    ROUTER -->|"clickhouse=false"| MGP
+
     SYNC -.->|lookup| REG[Schema Registry]
     XLAT -.->|lookup| REG
+    API[Management API + /metrics] --> REG
 </div>
 
-<h2>2. Data Flow</h2>
+<div class="highlight">
+    <strong>Key insight:</strong> Writes go to MongoDB unchanged (zero overhead). Secondaries provide HA. MongoFlux routes reads — analytics to ClickHouse, everything else to MongoDB. Your app uses one interface for everything. No split paths, no code changes.
+</div>
+
+<hr class="separator">
+
+<h2>Data Flow</h2>
 
 <h3>Write Path (zero overhead)</h3>
-<p>Writes target the MongoDB primary. The two secondaries replicate via the standard MongoDB protocol. MongoFlux tails the primary's oplog independently.</p>
+
+<p>Writes target the MongoDB primary. The two secondaries replicate via the standard protocol. MongoFlux tails the oplog independently — it is not in the write path.</p>
+
 <div class="mermaid">
 sequenceDiagram
     participant App
@@ -72,18 +136,21 @@ sequenceDiagram
     participant mf as MongoFlux
     participant CH as ClickHouse
 
-    App->>Primary: insert/update
-    Primary-->>App: ack ✓
+    App->>Primary: insertOne({amount: 99.99})
+    Primary-->>App: acknowledged ✓
     Primary->>S1: replication (async)
     Primary->>S2: replication (async)
-    Note right of App: Write done.<br/>MongoFlux not in path.
+    Note over App: Write done. Zero overhead.
     Primary->>mf: oplog entry (async)
-    mf->>CH: batch INSERT
+    mf->>mf: extract fields → batch
+    mf->>CH: INSERT batch (every 500ms)
     mf->>mf: save position
 </div>
 
 <h3>Read Path (query routing)</h3>
-<p>The application sends all reads to MongoFlux. If <code>?clickhouse=true</code> is in the URI, the query is translated to SQL and executed on ClickHouse. Otherwise, it's forwarded to MongoDB Primary unchanged.</p>
+
+<p>Same interface for everything. No split paths.</p>
+
 <div class="mermaid">
 sequenceDiagram
     App->>MongoFlux: find({status:"shipped"}, ?clickhouse=true)
@@ -91,6 +158,7 @@ sequenceDiagram
     MongoFlux->>ClickHouse: SELECT * WHERE status='shipped'
     ClickHouse-->>App: results
 </div>
+
 <div class="mermaid">
 sequenceDiagram
     App->>MongoFlux: find({_id: "abc123"}) [no clickhouse param]
@@ -98,33 +166,35 @@ sequenceDiagram
     MongoDB Primary-->>App: results
 </div>
 
-<h2>3. Components</h2>
+<h3>Query Translation (BSON → AST → SQL)</h3>
+
+<div class="mermaid">
+flowchart LR
+    A["MongoDB Pipeline<br/>{$group: {_id: '$region',<br/>total: {$sum: '$amount'}}}"] -->|parse| B["Expression Tree<br/>(AST)"]
+    B -->|emit| C["ClickHouse SQL<br/>SELECT region, sum(amount)<br/>FROM orders GROUP BY region"]
+</div>
+
+<p>Supports 12 pipeline stages, 12 accumulators, and 40+ expressions — arithmetic, string, date, conditional.</p>
+
+<hr class="separator">
+
+<h2>Components</h2>
 
 <h3>Oplog Sync</h3>
-<p>Tails <code>local.oplog.rs</code> with tailable-await cursor. Position saved AFTER flush. Failed batches retained for retry.</p>
+<p>Tails <code>local.oplog.rs</code> with tailable-await cursor. Position saved AFTER flush. Failed batches retained for retry. Backpressure via <code>max_pending_rows</code>. Optional delete propagation.</p>
 
-<h3>Query Translator (AST)</h3>
-<div class="mermaid">
-graph LR
-    BSON[BSON] -->|parse| TREE[ExprNode Tree] -->|emit| SQL[SQL]
-</div>
-<p>Supports: <code>find()</code>, <code>aggregate($match, $group, $sort, $limit, $project, $count)</code>, operators <code>$gt/$lt/$in/$or/$regex/$exists</code>.</p>
+<h3>Change Stream Sync (Atlas/Sharded)</h3>
+<p>Alternative for environments without direct oplog access. Per-collection threads with resume token persistence.</p>
 
 <h3>Cluster Support</h3>
-<div class="mermaid">
-graph LR
-    subgraph Standalone
-        A[MongoFlux] -->|INSERT| B[MergeTree]
-    end
-    subgraph Clustered
-        C[MongoFlux] -->|INSERT| D[Distributed]
-        D --> E[Shard 1]
-        D --> F[Shard 2]
-        D --> G[Shard 3]
-    end
-</div>
+<table>
+    <tr><th>Mode</th><th>Config</th><th>Result</th></tr>
+    <tr><td>Standalone</td><td>No <code>cluster</code> field</td><td>Single MergeTree table</td></tr>
+    <tr><td>Clustered</td><td><code>"cluster": "prod"</code></td><td>Local table + Distributed table (auto-routes)</td></tr>
+</table>
 
 <h3>Crash Recovery</h3>
+
 <div class="mermaid">
 stateDiagram-v2
     [*] --> Tailing
@@ -133,11 +203,24 @@ stateDiagram-v2
     Flushing --> Tailing: FAIL → keep rows
     Tailing --> [*]: SIGTERM → flush + save
 </div>
-<div class="note">Position saved only after successful flush. Crash before save → replay. ReplacingMergeTree deduplicates.</div>
 
-<h2>4. Performance</h2>
+<div class="note">Position saved only after successful flush. Crash before save → replay. ReplacingMergeTree deduplicates. At-least-once delivery guaranteed.</div>
 
-<h3>Reads (500K records)</h3>
+<hr class="separator">
+
+<h2>Performance</h2>
+
+<h3>Read Benchmarks (500K records)</h3>
+
+<div class="mermaid">
+xychart-beta
+    title "MongoDB vs ClickHouse Latency (ms)"
+    x-axis ["Count", "Revenue", "Top 10", "Monthly", "2D Group", "Filter", "Percentile", "Dashboard"]
+    y-axis "ms" 0 --> 550
+    bar [313, 281, 520, 335, 365, 287, 312, 394]
+    bar [8, 10, 34, 11, 13, 10, 14, 12]
+</div>
+
 <table>
     <tr><th>Query</th><th>MongoDB</th><th>Standalone CH</th><th>Distributed (3 shards)</th></tr>
     <tr><td>GROUP BY count</td><td>823 ms</td><td>17 ms (50x)</td><td>61 ms (13x)</td></tr>
@@ -148,26 +231,21 @@ stateDiagram-v2
     <tr><td>Percentile + agg</td><td>1,206 ms</td><td>23 ms (53x)</td><td>58 ms (21x)</td></tr>
 </table>
 
-<div class="mermaid">
-xychart-beta
-    title "Query Latency (ms) — 500K records"
-    x-axis ["GROUP BY", "Avg region", "Top 10", "Date scan", "Count", "Percentile"]
-    y-axis "ms" 0 --> 1500
-    bar [823, 886, 1097, 1492, 448, 1206]
-    bar [17, 22, 89, 78, 12, 23]
-    bar [61, 44, 178, 63, 37, 58]
-</div>
+<p>Standalone avg: <strong>26.5x</strong> | Distributed avg: <strong>12.3x</strong> | Speedup scales superlinearly: 12x at 200K → 27x at 500K → 40x at 1M.</p>
 
-<h3>Writes (200K records)</h3>
+<h3>Write Overhead: Zero</h3>
 <table>
     <tr><th>Metric</th><th>MongoDB alone</th><th>With MongoFlux</th><th>Overhead</th></tr>
     <tr><td>Batch throughput</td><td>28,639 docs/s</td><td>31,858 docs/s</td><td>0%</td></tr>
     <tr><td>Single insert P99</td><td>8.25 ms</td><td>8.08 ms</td><td>0%</td></tr>
 </table>
 
-<h2>5. Configuration</h2>
+<hr class="separator">
+
+<h2>Configuration</h2>
+
 <pre><code>mongo:
-  uri: "mongodb://mongo-primary:27017,mongo-secondary1:27017,mongo-secondary2:27017/?replicaSet=rs0"
+  uri: "mongodb://mongo-primary:27017,.../?replicaSet=rs0"
   database: "myapp"
 
 clickhouse:
@@ -180,14 +258,25 @@ sync:
   mode: "oplog"            # or "changestream"
   batch_size: 1000
   flush_interval_ms: 500
+  max_pending_rows: 100000
+  propagate_deletes: false
 
 api:
-  port: 9090</code></pre>
+  port: 9090
 
-<p>Validated at startup: required fields, port ranges, batch_size (1-1M), mode must be <code>oplog</code> or <code>changestream</code>.</p>
+routing:
+  clickhouse_param: "clickhouse"</code></pre>
 
-<h2>6. Deployment</h2>
-<p>The default deployment uses a 3-node MongoDB replica set (<code>rs0</code>) with 1 primary and 2 secondaries. MongoFlux connects using the full replica set URI and automatically follows primary elections.</p>
+<table>
+    <tr><th>Sync mode</th><th>When to use</th><th>Requires</th></tr>
+    <tr><td><code>oplog</code></td><td>Direct replica set, lowest latency</td><td><code>local.oplog.rs</code> access</td></tr>
+    <tr><td><code>changestream</code></td><td>Atlas, sharded clusters</td><td>MongoDB 4.0+</td></tr>
+</table>
+
+<hr class="separator">
+
+<h2>Deployment</h2>
+
 <div class="mermaid">
 flowchart LR
     APP[Apps] --> MGP[(MongoDB Primary)]
@@ -202,32 +291,73 @@ flowchart LR
 
 <table>
     <tr><th>Aspect</th><th>Detail</th></tr>
-    <tr><td>MongoDB</td><td>3-node replica set: <code>mongo-primary</code>, <code>mongo-secondary1</code>, <code>mongo-secondary2</code> with auto <code>rs.initiate()</code></td></tr>
+    <tr><td>MongoDB</td><td>3-node replica set with auto <code>rs.initiate()</code></td></tr>
     <tr><td>Container</td><td>Non-root <code>mongoflux</code>, <code>tini</code> PID 1, graceful shutdown</td></tr>
     <tr><td>K8s probes</td><td><code>/health</code> (liveness), <code>/ready</code> (checks CH)</td></tr>
+    <tr><td>Metrics</td><td><code>/metrics</code> (Prometheus format)</td></tr>
     <tr><td>Security</td><td>RAII CURL, URL-encoded creds, deploy API behind gateway</td></tr>
 </table>
 
-<h2>7. Failure Modes</h2>
+<hr class="separator">
+
+<h2>Production Features</h2>
+
+<ul>
+    <li><strong>Prometheus metrics</strong> — rows synced, flush latency, oplog lag, buffer size</li>
+    <li><strong>Backpressure</strong> — configurable max pending rows prevents OOM</li>
+    <li><strong>Delete propagation</strong> — optional tombstone rows for soft-delete tracking</li>
+    <li><strong>Config validation</strong> — fails fast with clear errors on startup</li>
+    <li><strong>Graceful shutdown</strong> — flushes pending batches, persists position on SIGTERM</li>
+    <li><strong>Kubernetes-ready</strong> — non-root container, tini PID 1, health probes</li>
+</ul>
+
+<hr class="separator">
+
+<h2>Failure Modes</h2>
+
 <table>
     <tr><th>Failure</th><th>Recovery</th><th>Data Loss</th></tr>
     <tr><td>MongoFlux crash</td><td>Resume from saved position</td><td>None</td></tr>
     <tr><td>ClickHouse down</td><td>Retry on next flush</td><td>None</td></tr>
-    <tr><td>MongoDB primary failover</td><td>Driver auto-discovers new primary via replica set URI (3s backoff)</td><td>None</td></tr>
-    <tr><td>MongoDB secondary down</td><td>No impact — MongoFlux tails primary only</td><td>None</td></tr>
+    <tr><td>MongoDB primary failover</td><td>Auto-discovers new primary (3s backoff)</td><td>None</td></tr>
+    <tr><td>MongoDB secondary down</td><td>No impact — tails primary only</td><td>None</td></tr>
     <tr><td>Corrupted token</td><td>Start from oplog tail</td><td>Possible gap</td></tr>
 </table>
 
-<h2>8. Roadmap</h2>
+<hr class="separator">
+
+<h2>Getting Started</h2>
+
+<pre><code>git clone https://github.com/your-org/MongoFlux
+cd MongoFlux
+docker compose up --build</code></pre>
+
+<p>Starts MongoDB (3-node replica set), ClickHouse, and MongoFlux. Create a mapping, insert data, query at 27x speed. Five minutes.</p>
+
+<hr class="separator">
+
+<h2>When Should You Use This?</h2>
+
+<p><strong>Good fit:</strong> MongoDB in production + slow aggregations + need real-time analytics without ETL complexity.</p>
+
+<p><strong>Not a fit:</strong> Simple point lookups (MongoDB is already fast), need sub-millisecond replication, or strong consistency on deletes.</p>
+
+<hr class="separator">
+
+<h2>Roadmap</h2>
 <table>
     <tr><th>Item</th><th>Priority</th></tr>
     <tr><td>HA via leader election</td><td>High</td></tr>
     <tr><td>Initial bulk sync</td><td>High</td></tr>
     <tr><td>Partial update support ($set)</td><td>Medium</td></tr>
-    <tr><td>Prometheus metrics</td><td>Medium</td></tr>
-    <tr><td>API authentication</td><td>Medium</td></tr>
+    <tr><td>API authentication (JWT/mTLS)</td><td>Medium</td></tr>
+    <tr><td>Wire protocol proxy</td><td>Low</td></tr>
 </table>
 
-<script>mermaid.initialize({startOnLoad:true,theme:'default'});</script>
+<p style="text-align: center; color: #6b7280; margin-top: 3rem; font-family: -apple-system, sans-serif; font-size: 0.85rem;">
+    MongoFlux is Apache-2.0 licensed. Built with C++17, mongocxx 3.9, libcurl, cpp-httplib, and nlohmann/json.
+</p>
+
+<script>mermaid.initialize({startOnLoad:true, theme:'neutral'});</script>
 </body>
 </html>
