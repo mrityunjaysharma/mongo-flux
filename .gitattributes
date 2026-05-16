@@ -1,0 +1,3 @@
+# Ensure GitHub detects this as a Go project
+*.go linguist-language=Go
+benchmark/*.json linguist-generated=true

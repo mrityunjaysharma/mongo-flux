@@ -1,6 +1,6 @@
 # MongoFlux — Design & Architecture
 
-**v1.2** | 2026-05-15 | Production
+**v2.0** | 2026-05-16 | Production (Go)
 
 ---
 
@@ -154,7 +154,7 @@ Supports:
 
 ### Schema Registry
 
-Thread-safe `unordered_map<collection, CollectionMapping>` with mutex. Persisted to `mappings.json`. Shared by sync engine, translator, and management API.
+Thread-safe `map[string]CollectionMapping` with `sync.RWMutex`. Persisted to `mappings.json`. Shared by sync engine, translator, and management API.
 
 ### Cluster Support
 
@@ -193,45 +193,45 @@ The critical design decision: oplog position is saved only AFTER a successful fl
 
 ## Performance
 
-### Read Benchmarks (500K records)
+### Read Benchmarks (1M records)
 
 ```mermaid
 xychart-beta
-    title "MongoDB vs ClickHouse Latency (ms)"
-    x-axis ["Count", "Revenue", "Top 10", "Monthly", "2D Group", "Filter+Agg", "Percentile", "Dashboard"]
+    title "MongoDB vs ClickHouse Latency (ms) — 1M records"
+    x-axis ["Count", "Avg Region", "Top 10", "Date Range", "Full Count", "2D Group"]
     y-axis "Latency (ms)" 0 --> 750
-    bar [313, 281, 520, 335, 365, 287, 312, 394]
-    bar [8, 10, 34, 11, 13, 10, 14, 12]
+    bar [565, 663, 610, 750, 291, 985]
+    bar [4, 6, 6, 149, 2, 15]
 ```
 
-| Query | MongoDB | Standalone CH | Distributed CH (3 shards) |
-|:------|:--------|:--------------|:--------------------------|
-| GROUP BY count | 823 ms | 17 ms (50x) | 61 ms (13x) |
-| Avg by region | 886 ms | 22 ms (41x) | 44 ms (20x) |
-| Top 10 customers | 1,097 ms | 89 ms (12x) | 178 ms (6x) |
-| Date range scan | 1,492 ms | 78 ms (19x) | 63 ms (24x) |
-| Full count | 448 ms | 12 ms (38x) | 37 ms (12x) |
-| Percentile + agg | 1,206 ms | 23 ms (53x) | 58 ms (21x) |
+| Query | MongoDB | ClickHouse | Speedup |
+|:------|:--------|:-----------|:--------|
+| Count by status | 565 ms | 4.2 ms | **136x** |
+| Full table count | 291 ms | 2.3 ms | **129x** |
+| Avg amount by region | 663 ms | 6.3 ms | **105x** |
+| Top 10 by spend | 610 ms | 6.3 ms | **98x** |
+| 2D GROUP BY | 985 ms | 15.4 ms | **64x** |
+| Date range scan | 1,561 ms | 149 ms | **10x** |
 
-Standalone avg: **26.5x** | Distributed avg: **12.3x** | Distributed wins on large parallel scans (date range: 24x vs 19x).
+Average: **90.3x faster** at 1M documents.
 
-The speedup scales superlinearly with data size: 12x at 200K → 27x at 500K → 40x at 1M records.
+The speedup scales superlinearly with data size: 6x at 100K → 27x at 500K → 90x at 1M records.
 
 ### Write Overhead: Zero
 
-| Metric | MongoDB alone | With MongoFlux | Overhead |
-|:-------|:-------------|:---------------|:---------|
-| Batch throughput | 28,639 docs/s | 31,858 docs/s | **0%** |
-| Single insert P99 | 8.25 ms | 8.08 ms | **0%** |
+| Metric | Value |
+|:-------|:------|
+| Batch throughput | 32,433 docs/s |
+| Single insert avg latency | 5.6 ms |
 
-The oplog tailing is completely invisible to your write path.
+The oplog tailing is completely invisible to your write path. MongoDB acks writes before MongoFlux processes them.
 
 ### Standalone vs Distributed
 
 | Mode | When to use | Avg speedup |
 |:-----|:------------|:------------|
-| Standalone | Data fits on one node (<500GB) | 26.5x |
-| Distributed (3 shards) | Horizontal scaling needed | 12.3x |
+| Standalone | Data fits on one node (<500GB) | 90x at 1M |
+| Distributed (3 shards) | Horizontal scaling needed | ~12x (cross-shard overhead) |
 
 Distributed is slower at small data sizes due to cross-shard coordination overhead. It wins at 10M+ rows per shard where parallel scan outweighs network cost.
 
@@ -304,7 +304,7 @@ flowchart LR
 | Container | Non-root `mongoflux`, `tini` PID 1, graceful shutdown |
 | K8s probes | `/health` (liveness), `/ready` (checks CH) |
 | Metrics | `/metrics` (Prometheus format) |
-| Security | RAII CURL, URL-encoded creds, deploy API behind gateway |
+| Security | URL-encoded creds, connection pooling, deploy API behind gateway |
 
 ---
 
@@ -373,24 +373,23 @@ This starts a 3-node MongoDB replica set (1 primary + 2 secondaries on ports 270
 ## File Structure
 
 ```
-include/mongoflux/
-  config.h, schema_mapping.h, expr_tree.h, query_translator.h,
-  clickhouse_client.h, oplog_sync.h, change_stream_sync.h,
-  mongo_proxy.h, management_api.h, routing.h, bson_utils.h, metrics.h
+cmd/
+  mongoflux/main.go          Entry point, startup/shutdown orchestration
+  benchmark/main.go          Benchmark tool (read, write, breakeven, aggregation)
 
-src/
-  main.cpp, config.cpp, schema_mapping.cpp, expr_tree.cpp,
-  query_translator.cpp, clickhouse_client.cpp, oplog_sync.cpp,
-  change_stream_sync.cpp, mongo_proxy.cpp, management_api.cpp, routing.cpp
-
-benchmark/
-  read_benchmark.py, write_benchmark.py, distributed_benchmark.py,
-  breakeven_benchmark.py, aggregation_benchmark.py, real_data_benchmark.py
-
-test-app/
-  test_mongoflux.py
+internal/
+  api/api.go                 REST management API (gin)
+  clickhouse/client.go       ClickHouse HTTP client with connection pooling
+  config/config.go           YAML config + env overrides + validation
+  metrics/metrics.go         Prometheus metrics collector
+  routing/routing.go         MongoDB URI parsing + routing detection
+  schema/mapping.go          Thread-safe mapping registry + DDL generation
+  sync/oplog.go              Oplog tailer (same mechanism as MongoDB secondaries)
+  sync/changestream.go       Change stream CDC (Atlas/sharded clusters)
+  translator/expr.go         Expression tree AST nodes + SQL emitter
+  translator/translator.go   BSON → AST parser (find + aggregate)
 ```
 
 ---
 
-*MongoFlux is Apache-2.0 licensed. Built with C++17, mongocxx 3.9, libcurl, cpp-httplib, and nlohmann/json.*
+*MongoFlux is Apache-2.0 licensed. Built with Go 1.22, mongo-go-driver, gin, and yaml.v3.*

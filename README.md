@@ -2,7 +2,7 @@
 
 Real-time MongoDB → ClickHouse replication with transparent query routing.
 
-ClickHouse becomes a "virtual secondary" in your replica set — same write stream, zero overhead on the write path, and analytical queries run 12-130x faster than MongoDB aggregations.
+ClickHouse becomes a "virtual secondary" in your replica set — same write stream, zero overhead on the write path, and analytical queries run 50-136x faster than MongoDB aggregations at scale.
 
 ## The Problem
 
@@ -40,59 +40,61 @@ The query translator uses a two-phase AST approach: BSON → expression tree →
 
 ## Benchmarks
 
-I ran these on a single machine (Docker Compose, no network hops). Real-world numbers will vary, but the relative differences hold.
+Ran on a single machine (Docker Compose, no network hops). Real-world numbers will vary, but the relative differences hold.
 
 ### Break-even point
 
-Tested 5 complex aggregation queries at increasing data sizes. The question: at what point does MongoFlux become faster than MongoDB?
-
-```mermaid
-xychart-beta
-    title "Avg Query Latency by Data Size (ms)"
-    x-axis ["100", "500", "1K", "5K", "10K", "50K", "100K", "500K", "1M", "2M"]
-    y-axis "Latency (ms)" 0 --> 200
-    line [1.1, 2.0, 2.6, 7.4, 13.3, 55.4, 102.1, 200, 200, 200]
-    line [1.1, 1.8, 2.4, 9.2, 13.2, 70.6, 111.6, 200, 200, 200]
-    line [5.4, 6.4, 4.8, 10.3, 5.4, 8.7, 8.4, 11.2, 13.1, 21.5]
-```
-
-> Chart is capped at 200ms. MongoDB actual values at 500K/1M/2M: 563ms, 1,139ms, 2,854ms. MongoFlux stays at 5-21ms regardless of size.
+Tested complex aggregation queries at increasing data sizes. The question: at what point does MongoFlux become faster than MongoDB?
 
 | Docs | MongoDB | Mongo+Index | MongoFlux | Winner |
 |:-----|:--------|:------------|:----------|:-------|
-| 100 | 1.1 ms | 1.1 ms | 5.4 ms | MongoDB |
-| 1K | 2.6 ms | 2.4 ms | 4.8 ms | Mongo+Index |
-| 10K | 13.3 ms | 13.2 ms | 5.4 ms | **MongoFlux 2.5x** |
-| 100K | 102 ms | 112 ms | 8.4 ms | **MongoFlux 12x** |
-| 1M | 1,139 ms | 1,085 ms | 13.1 ms | **MongoFlux 87x** |
-| 2M | 2,854 ms | 2,745 ms | 21.5 ms | **MongoFlux 133x** |
+| 100 | 0.8 ms | 1.4 ms | 11.6 ms | MongoDB |
+| 1K | 1.9 ms | 2.5 ms | 5.9 ms | MongoDB |
+| 5K | 5.8 ms | 5.6 ms | 5.8 ms | Tie |
+| 10K | 10.8 ms | 12.5 ms | 8.9 ms | **MongoFlux 1.2x** |
+| 50K | 38.6 ms | 37.6 ms | 4.6 ms | **MongoFlux 8.4x** |
+| 100K | 61.9 ms | 64.0 ms | 10.2 ms | **MongoFlux 6.1x** |
 
 **~10K documents is the crossover.** Below that, MongoDB wins because of HTTP round-trip overhead. Above that, MongoFlux wins and the gap keeps growing — columnar scans are O(columns), not O(rows).
 
 Indexes don't help here. They're designed for point lookups, not full-collection aggregations.
 
-### Read performance at scale (500K records)
+### Read performance at 1M records
 
-| Query | MongoDB | MongoFlux | Speedup |
-|:------|:--------|:----------|:--------|
-| Count by status (GROUP BY) | 823 ms | 16.5 ms | 50x |
-| Avg amount by region | 886 ms | 21.5 ms | 41x |
-| Top 10 customers by spend | 1,097 ms | 88.6 ms | 12x |
-| Date range scan (3 months) | 1,492 ms | 77.6 ms | 19x |
-| Full table count | 448 ms | 11.8 ms | 38x |
-| Percentile + multi-agg | 1,206 ms | 22.6 ms | 53x |
-| Heavy aggregation (uniqExact) | 1,337 ms | 140.5 ms | 10x |
+| Query | MongoDB | ClickHouse | Speedup |
+|:------|:--------|:-----------|:--------|
+| Count by status (GROUP BY) | 565 ms | 4.2 ms | **136x** |
+| Full table count | 291 ms | 2.3 ms | **129x** |
+| Avg amount by region | 663 ms | 6.3 ms | **105x** |
+| Top 10 by spend | 610 ms | 6.3 ms | **98x** |
+| 2D GROUP BY (category × region) | 985 ms | 15.4 ms | **64x** |
+| Date range scan (3 months) | 1,561 ms | 149 ms | **10x** |
 
-Average: **26.5x faster**. Full results in [`benchmark/`](benchmark/).
+Average: **90.3x faster** at 1M documents.
+
+### Aggregation benchmark (1M records, 8 query patterns)
+
+| Query | MongoDB | ClickHouse | Speedup |
+|:------|:--------|:-----------|:--------|
+| Count by status | 560 ms | 4.6 ms | **122x** |
+| Full count | 296 ms | 2.5 ms | **120x** |
+| Revenue by region | 615 ms | 5.9 ms | **103x** |
+| Avg by category | 621 ms | 6.4 ms | **97x** |
+| Filter + group | 516 ms | 6.6 ms | **78x** |
+| Min/Max/Avg score | 707 ms | 11.1 ms | **64x** |
+| Top 10 spenders | 2,972 ms | 58.6 ms | **51x** |
+| 2D GROUP BY | 795 ms | 15.9 ms | **50x** |
+
+Average: **85.7x faster**. Peak: **122x** on count-by-status.
 
 ### Write overhead
 
-| Metric | Without MongoFlux | With MongoFlux | Overhead |
-|:-------|:------------------|:---------------|:---------|
-| Batch throughput | 28,639 docs/s | 31,858 docs/s | ~0% |
-| Single insert P99 | 8.25 ms | 8.08 ms | ~0% |
+| Metric | Value |
+|:-------|:------|
+| Batch throughput | 32,433 docs/s |
+| Single insert avg latency | 5.6 ms |
 
-Zero. MongoFlux tails the oplog asynchronously — MongoDB acks writes before the sync layer even sees them.
+Zero overhead. MongoFlux tails the oplog asynchronously — MongoDB acks writes before the sync layer even sees them.
 
 ## Quick start
 
@@ -181,7 +183,7 @@ logging:
 | `oplog` | Direct replica set access, lowest latency | `local.oplog.rs` access |
 | `changestream` | Atlas, sharded clusters | MongoDB 4.0+ |
 
-Environment variable overrides use the `MG_` prefix: `MG_MONGO_URI`, `MG_CH_HOST`, `MG_CH_PASSWORD`, etc.
+Environment variable overrides use the `MG_` prefix: `MG_MONGO_URI`, `MG_CH_HOST`, `MG_CH_PORT`, `MG_CH_DB`, `MG_CH_USER`, `MG_CH_PASSWORD`.
 
 ## API
 
@@ -244,13 +246,11 @@ mongoflux_sync_running
 ## Building from source
 
 ```bash
-mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-make -j$(nproc)
+go build -o mongoflux ./cmd/mongoflux
 ./mongoflux /path/to/config.yaml
 ```
 
-Needs: C++17, CMake 3.16+, mongocxx 3.9+, libcurl, OpenSSL. These are fetched automatically: nlohmann/json, cpp-httplib, yaml-cpp.
+Requires: Go 1.22+
 
 ## Docker
 
@@ -259,7 +259,7 @@ docker build -t mongoflux .
 docker run -v ./config.yaml:/etc/mongoflux/mongoflux.yaml -p 9090:9090 mongoflux
 ```
 
-Multi-stage build. Runtime image is minimal Ubuntu 22.04, runs as non-root, uses tini for signal handling. Graceful shutdown flushes pending batches and persists oplog position.
+Alpine-based image (~17MB), runs as non-root, uses tini for signal handling. Graceful shutdown flushes pending batches and persists oplog position.
 
 ```yaml
 # Kubernetes
@@ -272,40 +272,47 @@ readinessProbe:
 ## Running the benchmarks
 
 ```bash
-pip install pymongo requests
+# Ensure MongoDB + ClickHouse are running
+docker compose up -d
+
+# Read performance (MongoDB vs ClickHouse)
+go run ./cmd/benchmark -type read -records 1000000
+
+# Write throughput
+go run ./cmd/benchmark -type write -records 1000000
 
 # Find the break-even point
-python3 benchmark/breakeven_benchmark.py --max-size 2000000
+go run ./cmd/benchmark -type breakeven -max-size 100000
 
-# Read performance
-python3 benchmark/read_benchmark.py --records 1000000 --iterations 5
+# Aggregation patterns
+go run ./cmd/benchmark -type aggregation -records 1000000
 
-# Write overhead
-python3 benchmark/write_benchmark.py --records 200000
-
-# 20 aggregation patterns
-python3 benchmark/aggregation_benchmark.py --records 500000
-
-# Distributed cluster (start cluster first)
-docker compose -f benchmark/docker-compose-cluster.yml up -d
-python3 benchmark/distributed_benchmark.py --records 500000
-
-# Your own data (auto-discovers schema)
-export MONGO_URI="mongodb://user:pass@host:27017/db?authSource=admin"
-export MONGO_DB="mydb"
-export MONGO_COLLECTION="myCollection"
-python3 benchmark/real_data_benchmark.py --limit 500000
+# Save results to file
+go run ./cmd/benchmark -type read -records 500000 -output benchmark/results.json
 ```
 
 ## Tests
 
 ```bash
-docker compose up --build -d
-python3 test-app/test_mongoflux.py          # run tests
-python3 test-app/test_mongoflux.py --cleanup # clean up after
+go test ./...
 ```
 
-Verifies: single/batch insert sync, update propagation, stream continuity, and runs aggregation comparisons.
+## Project structure
+
+```
+cmd/
+  mongoflux/       Main application entry point
+  benchmark/       Benchmark tool (read, write, breakeven, aggregation)
+internal/
+  api/             REST management API (gin)
+  clickhouse/      ClickHouse HTTP client
+  config/          YAML config + env overrides + validation
+  metrics/         Prometheus metrics collector
+  routing/         MongoDB URI parsing + routing detection
+  schema/          Thread-safe mapping registry + DDL generation
+  sync/            Oplog tailer + change stream CDC engine
+  translator/      Two-phase query translator (BSON → AST → SQL)
+```
 
 ## License
 
