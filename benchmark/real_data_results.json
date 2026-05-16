@@ -1,0 +1,123 @@
+{
+  "timestamp": "2026-05-15T23:15:26.335088",
+  "mongo_db": "apm_db",
+  "collection": "apmActiveAlertsProdUSMar10",
+  "document_count": 417913,
+  "schema_fields": 185,
+  "results": [
+    {
+      "query": "1. Total alert count",
+      "mongo_avg_ms": 629.2955936660292,
+      "ch_avg_ms": 6.417939332701887,
+      "speedup": 98.05259305888485
+    },
+    {
+      "query": "2. Count by status",
+      "mongo_avg_ms": 1188.5872340014128,
+      "ch_avg_ms": 19.359250999211024,
+      "speedup": 61.39634400369379
+    },
+    {
+      "query": "3. Alerts by category \u00d7 type",
+      "mongo_avg_ms": 1728.3312506673003,
+      "ch_avg_ms": 22.266802998880546,
+      "speedup": 77.61919170678392
+    },
+    {
+      "query": "4. Top 20 customers by alert count",
+      "mongo_avg_ms": 901.0177190017808,
+      "ch_avg_ms": 26.294736662142288,
+      "speedup": 34.266086425539925
+    },
+    {
+      "query": "5. Alerts by product \u00d7 region \u00d7 status",
+      "mongo_avg_ms": 1532.78074466895,
+      "ch_avg_ms": 36.825633001474976,
+      "speedup": 41.62265845118148
+    },
+    {
+      "query": "6. Unique customers per segment",
+      "mongo_avg_ms": 1031.0606883334306,
+      "ch_avg_ms": 28.074314327871736,
+      "speedup": 36.72612183122171
+    },
+    {
+      "query": "7. Avg alert value by product",
+      "mongo_avg_ms": 1215.653353666615,
+      "ch_avg_ms": 45.27328932696643,
+      "speedup": 26.851447547517324
+    },
+    {
+      "query": "9. Open alerts by assignee (top 20)",
+      "mongo_avg_ms": 1327.3210969976692,
+      "ch_avg_ms": 19.58300000114832,
+      "speedup": 67.77925225551942
+    },
+    {
+      "query": "10. Resolution rate by product",
+      "mongo_avg_ms": 1089.1673760003566,
+      "ch_avg_ms": 17.843512003310025,
+      "speedup": 61.03996656030006
+    },
+    {
+      "query": "11. Top 15 ATS by alerts + customers",
+      "mongo_avg_ms": 1153.9770210025988,
+      "ch_avg_ms": 23.168764004367404,
+      "speedup": 49.80744854516493
+    },
+    {
+      "query": "12. Alerts by experience \u00d7 pod",
+      "mongo_avg_ms": 1163.280554668745,
+      "ch_avg_ms": 24.81042466630849,
+      "speedup": 46.886765152731584
+    },
+    {
+      "query": "13. Premier customers with open alerts",
+      "mongo_avg_ms": 1053.2593876608491,
+      "ch_avg_ms": 24.760569004380766,
+      "speedup": 42.53776993067086
+    },
+    {
+      "query": "14. Alert types per data centre",
+      "mongo_avg_ms": 1990.6378386658616,
+      "ch_avg_ms": 41.375139669980854,
+      "speedup": 48.1119303655219
+    },
+    {
+      "query": "15. Jira status by product",
+      "mongo_avg_ms": 1478.961110668024,
+      "ch_avg_ms": 21.53912032857382,
+      "speedup": 68.66395136416192
+    },
+    {
+      "query": "16. High-repeat alerts (value>10) by customer",
+      "mongo_avg_ms": 1128.415854672009,
+      "ch_avg_ms": 22.016234671658214,
+      "speedup": 51.25380754251468
+    },
+    {
+      "query": "17. Service \u00d7 alertType heatmap",
+      "mongo_avg_ms": 952.1284323272994,
+      "ch_avg_ms": 20.52058000602604,
+      "speedup": 46.39870959045499
+    },
+    {
+      "query": "18. Unique alert names per product",
+      "mongo_avg_ms": 977.5625439991321,
+      "ch_avg_ms": 23.274664670073737,
+      "speedup": 42.00114407044796
+    },
+    {
+      "query": "19. Acknowledged ratio by region",
+      "mongo_avg_ms": 1273.0777210041804,
+      "ch_avg_ms": 17.21775600647864,
+      "speedup": 73.93981657802276
+    },
+    {
+      "query": "20. Cross-tab: region \u00d7 segment \u00d7 status",
+      "mongo_avg_ms": 1630.0817406687809,
+      "ch_avg_ms": 25.37837267057815,
+      "speedup": 64.23113734784815
+    }
+  ]
+}
