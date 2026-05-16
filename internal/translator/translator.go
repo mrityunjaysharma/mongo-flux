@@ -222,25 +222,32 @@ func (t *Translator) parseFilter(filter bson.D, mapping *schema.CollectionMappin
 	for _, elem := range filter {
 		key := elem.Key
 
+		var node *ExprNode
 		switch key {
 		case "$and":
 			arr, ok := elem.Value.(bson.A)
 			if ok {
-				conditions = append(conditions, t.parseLogical(LogicAND, arr, mapping))
+				node = t.parseLogical(LogicAND, arr, mapping)
 			}
 		case "$or":
 			arr, ok := elem.Value.(bson.A)
 			if ok {
-				conditions = append(conditions, t.parseLogical(LogicOR, arr, mapping))
+				node = t.parseLogical(LogicOR, arr, mapping)
 			}
 		case "$nor":
 			arr, ok := elem.Value.(bson.A)
 			if ok {
 				orNode := t.parseLogical(LogicOR, arr, mapping)
-				conditions = append(conditions, MakeLogical(LogicNOT, []*ExprNode{orNode}))
+				if orNode != nil {
+					node = MakeLogical(LogicNOT, []*ExprNode{orNode})
+				}
 			}
 		default:
-			conditions = append(conditions, t.parseExpression(key, elem.Value, mapping))
+			node = t.parseExpression(key, elem.Value, mapping)
+		}
+
+		if node != nil {
+			conditions = append(conditions, node)
 		}
 	}
 

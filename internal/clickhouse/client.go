@@ -131,15 +131,28 @@ func (c *Client) Query(sql string) (*QueryResult, error) {
 	return result, nil
 }
 
-// InsertBatch inserts rows into a table.
+// InsertBatch inserts rows into a table. Database and table names are validated.
 func (c *Client) InsertBatch(database, table string, columns []string, rows [][]string) error {
 	if len(rows) == 0 {
 		return nil
 	}
 
+	// Validate identifiers to prevent SQL injection
+	if !isValidIdent(database) {
+		return fmt.Errorf("invalid database name: %q", database)
+	}
+	if !isValidIdent(table) {
+		return fmt.Errorf("invalid table name: %q", table)
+	}
+	for _, col := range columns {
+		if !isValidIdent(col) {
+			return fmt.Errorf("invalid column name: %q", col)
+		}
+	}
+
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("INSERT INTO %s.%s (%s) VALUES ",
-		database, table, strings.Join(columns, ", ")))
+	fmt.Fprintf(&sb, "INSERT INTO %s.%s (%s) VALUES ",
+		database, table, strings.Join(columns, ", "))
 
 	for i, row := range rows {
 		if i > 0 {
@@ -152,6 +165,23 @@ func (c *Client) InsertBatch(database, table string, columns []string, rows [][]
 
 	_, err := c.doQuery(sb.String())
 	return err
+}
+
+// isValidIdent checks that a string is safe for use as a SQL identifier.
+func isValidIdent(s string) bool {
+	if s == "" || len(s) > 128 {
+		return false
+	}
+	for i, c := range s {
+		if c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') {
+			continue
+		}
+		if i > 0 && (c >= '0' && c <= '9') {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 // TableExists checks if a table exists.

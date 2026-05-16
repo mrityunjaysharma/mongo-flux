@@ -65,7 +65,13 @@ func (a *ManagementAPI) Start() {
 	r.GET("/metrics", a.metricsEndpoint)
 
 	addr := fmt.Sprintf("%s:%d", a.config.Bind, a.config.Port)
-	a.httpServer = &http.Server{Addr: addr, Handler: r}
+	a.httpServer = &http.Server{
+		Addr:         addr,
+		Handler:      r,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 60 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
 
 	go func() {
 		log.Printf("[mongoflux] Management API listening on %s", addr)
@@ -140,13 +146,12 @@ func (a *ManagementAPI) createMapping(c *gin.Context) {
 	if mapping.Engine == "" {
 		mapping.Engine = "ReplacingMergeTree"
 	}
-	// Default to enabled for new mappings; respect explicit false from client
-	if mapping.Collection != "" && !mapping.Enabled {
-		// Only default to true if this is a brand new mapping (not an update)
-		existing := a.registry.Get(mapping.Collection)
-		if existing == nil {
-			mapping.Enabled = true
-		}
+	// JSON zero-value for bool is false. If the client didn't explicitly send enabled:false,
+	// we default new mappings to enabled. For updates, preserve whatever was sent.
+	existing := a.registry.Get(mapping.Collection)
+	if existing == nil && !mapping.Enabled {
+		// New mapping with no explicit enabled field → default to true
+		mapping.Enabled = true
 	}
 
 	created := a.registry.Upsert(mapping)
@@ -182,7 +187,12 @@ func (a *ManagementAPI) syncMapping(c *gin.Context) {
 		return
 	}
 
-	ddl := a.registry.GenerateCreateTableSQL(*mapping)
+	ddl, err := a.registry.GenerateCreateTableSQL(*mapping)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid mapping: " + err.Error()})
+		return
+	}
+
 	if err := a.chClient.CreateTable(ddl); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

@@ -78,7 +78,10 @@ func TestRegistry_generateDDL_standalone(t *testing.T) {
 		OrderBy: []string{"id"},
 	}
 
-	ddl := r.GenerateCreateTableSQL(mapping)
+	ddl, err := r.GenerateCreateTableSQL(mapping)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if !strings.Contains(ddl, "CREATE TABLE IF NOT EXISTS analytics.orders") {
 		t.Errorf("DDL missing CREATE TABLE: %s", ddl)
 	}
@@ -108,7 +111,10 @@ func TestRegistry_generateDDL_clustered(t *testing.T) {
 		ShardingKey: "cityHash64(id)",
 	}
 
-	ddl := r.GenerateCreateTableSQL(mapping)
+	ddl, err := r.GenerateCreateTableSQL(mapping)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if !strings.Contains(ddl, "events_local ON CLUSTER 'prod'") {
 		t.Errorf("DDL missing local table with ON CLUSTER: %s", ddl)
 	}

@@ -13,7 +13,6 @@ import (
 	"github.com/mongoflux/mongoflux/internal/config"
 	"github.com/mongoflux/mongoflux/internal/schema"
 	mfsync "github.com/mongoflux/mongoflux/internal/sync"
-	"github.com/mongoflux/mongoflux/internal/translator"
 )
 
 func main() {
@@ -53,9 +52,6 @@ func main() {
 	// Sync engines
 	csSync := mfsync.NewChangeStreamSync(cfg, registry, chClient)
 	oplogSync := mfsync.NewOplogSync(cfg, registry, chClient)
-
-	// Query translator (used by wire proxy)
-	_ = translator.NewTranslator(registry)
 
 	// Management API
 	mgmtAPI := api.NewManagementAPI(cfg.API, registry, chClient, csSync, oplogSync)

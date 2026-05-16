@@ -5,9 +5,27 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 )
+
+// validIdentifier matches safe ClickHouse/SQL identifiers (alphanumeric, underscore, dot for db.table).
+var validIdentifier = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_.]*$`)
+
+// validateIdentifier checks that a string is safe to use in SQL without quoting.
+func validateIdentifier(name, context string) error {
+	if name == "" {
+		return fmt.Errorf("%s cannot be empty", context)
+	}
+	if !validIdentifier.MatchString(name) {
+		return fmt.Errorf("%s contains invalid characters: %q (only alphanumeric, underscore, dot allowed)", context, name)
+	}
+	if len(name) > 128 {
+		return fmt.Errorf("%s exceeds maximum length of 128 characters", context)
+	}
+	return nil
+}
 
 // FieldMapping describes how a single MongoDB field maps to a ClickHouse column.
 type FieldMapping struct {
@@ -93,7 +111,37 @@ func (r *Registry) HasMapping(collection string) bool {
 }
 
 // GenerateCreateTableSQL generates the CREATE TABLE DDL for a mapping.
-func (r *Registry) GenerateCreateTableSQL(mapping CollectionMapping) string {
+// Returns an error if any identifier fails validation.
+func (r *Registry) GenerateCreateTableSQL(mapping CollectionMapping) (string, error) {
+	// Validate all identifiers to prevent SQL injection
+	if err := validateIdentifier(mapping.ClickHouseDatabase, "clickhouse_database"); err != nil {
+		return "", err
+	}
+	if err := validateIdentifier(mapping.ClickHouseTable, "clickhouse_table"); err != nil {
+		return "", err
+	}
+	for _, f := range mapping.Fields {
+		if err := validateIdentifier(f.CHColumn, "field ch_column"); err != nil {
+			return "", err
+		}
+	}
+	for _, col := range mapping.OrderBy {
+		if err := validateIdentifier(col, "order_by column"); err != nil {
+			return "", err
+		}
+	}
+	if mapping.Cluster != "" {
+		if err := validateIdentifier(mapping.Cluster, "cluster"); err != nil {
+			return "", err
+		}
+	}
+	if mapping.ShardingKey != "" {
+		// Sharding key can contain function calls like cityHash64(col), validate loosely
+		if strings.ContainsAny(mapping.ShardingKey, ";'\"\\") {
+			return "", fmt.Errorf("sharding_key contains forbidden characters: %q", mapping.ShardingKey)
+		}
+	}
+
 	var sb strings.Builder
 
 	localTable := mapping.ClickHouseTable
@@ -101,16 +149,15 @@ func (r *Registry) GenerateCreateTableSQL(mapping CollectionMapping) string {
 		localTable = mapping.ClickHouseTable + "_local"
 	}
 
-	sb.WriteString(fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s.%s",
-		mapping.ClickHouseDatabase, localTable))
+	fmt.Fprintf(&sb, "CREATE TABLE IF NOT EXISTS %s.%s", mapping.ClickHouseDatabase, localTable)
 
 	if mapping.Cluster != "" {
-		sb.WriteString(fmt.Sprintf(" ON CLUSTER '%s'", mapping.Cluster))
+		fmt.Fprintf(&sb, " ON CLUSTER '%s'", mapping.Cluster)
 	}
 
 	sb.WriteString(" (\n")
 	for i, field := range mapping.Fields {
-		sb.WriteString(fmt.Sprintf("    %s %s", field.CHColumn, field.CHType))
+		fmt.Fprintf(&sb, "    %s %s", field.CHColumn, field.CHType)
 		if i+1 < len(mapping.Fields) {
 			sb.WriteString(",")
 		}
@@ -121,10 +168,13 @@ func (r *Registry) GenerateCreateTableSQL(mapping CollectionMapping) string {
 	if engine == "" {
 		engine = "ReplacingMergeTree"
 	}
-	sb.WriteString(fmt.Sprintf(") ENGINE = %s()\n", engine))
+	if err := validateIdentifier(engine, "engine"); err != nil {
+		return "", err
+	}
+	fmt.Fprintf(&sb, ") ENGINE = %s()\n", engine)
 
 	if len(mapping.OrderBy) > 0 {
-		sb.WriteString(fmt.Sprintf("ORDER BY (%s)\n", strings.Join(mapping.OrderBy, ", ")))
+		fmt.Fprintf(&sb, "ORDER BY (%s)\n", strings.Join(mapping.OrderBy, ", "))
 	}
 
 	if mapping.Cluster != "" {
@@ -133,14 +183,14 @@ func (r *Registry) GenerateCreateTableSQL(mapping CollectionMapping) string {
 			shardKey = "rand()"
 		}
 		sb.WriteString(";\n\n")
-		sb.WriteString(fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s.%s ON CLUSTER '%s'\n",
-			mapping.ClickHouseDatabase, mapping.ClickHouseTable, mapping.Cluster))
-		sb.WriteString(fmt.Sprintf("AS %s.%s\n", mapping.ClickHouseDatabase, localTable))
-		sb.WriteString(fmt.Sprintf("ENGINE = Distributed('%s', '%s', '%s', %s)\n",
-			mapping.Cluster, mapping.ClickHouseDatabase, localTable, shardKey))
+		fmt.Fprintf(&sb, "CREATE TABLE IF NOT EXISTS %s.%s ON CLUSTER '%s'\n",
+			mapping.ClickHouseDatabase, mapping.ClickHouseTable, mapping.Cluster)
+		fmt.Fprintf(&sb, "AS %s.%s\n", mapping.ClickHouseDatabase, localTable)
+		fmt.Fprintf(&sb, "ENGINE = Distributed('%s', '%s', '%s', %s)\n",
+			mapping.Cluster, mapping.ClickHouseDatabase, localTable, shardKey)
 	}
 
-	return sb.String()
+	return sb.String(), nil
 }
 
 // SaveToFile persists mappings to a JSON file, creating parent directories if needed.

@@ -57,7 +57,11 @@ func (o *OplogSync) Start() {
 		if !m.Enabled {
 			continue
 		}
-		ddl := o.registry.GenerateCreateTableSQL(m)
+		ddl, err := o.registry.GenerateCreateTableSQL(m)
+		if err != nil {
+			log.Printf("[mongoflux/oplog] Invalid mapping for %s: %v", m.Collection, err)
+			continue
+		}
 		if err := o.chClient.CreateTable(ddl); err != nil {
 			log.Printf("[mongoflux/oplog] Failed to create table for %s: %v", m.Collection, err)
 		}
@@ -124,7 +128,8 @@ func (o *OplogSync) tailOplogInner(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("mongo connect: %w", err)
 	}
-	defer client.Disconnect(ctx)
+	// Use background context for disconnect to ensure clean shutdown even if ctx is cancelled
+	defer client.Disconnect(context.Background())
 
 	oplog := client.Database("local").Collection("oplog.rs")
 
@@ -259,16 +264,29 @@ func (o *OplogSync) tailOplogInner(ctx context.Context) error {
 			if !ok {
 				continue
 			}
-			// Check if full replacement (no $ operators)
+			// Check if full replacement (no $ operators, no v2 diff format)
 			isReplacement := true
 			for k := range oDoc {
-				if strings.HasPrefix(k, "$") || k == "diff" {
+				if strings.HasPrefix(k, "$") || k == "diff" || k == "$v" {
 					isReplacement = false
 					break
 				}
 			}
 			if isReplacement {
 				pending[collection].rows = append(pending[collection].rows, extractMappedFields(oDoc, mapping))
+			} else {
+				// Partial update: fetch the full document from MongoDB to get current state.
+				// This ensures ReplacingMergeTree has the latest version.
+				o2, _ := entry["o2"].(bson.M) // o2 contains the document filter (_id)
+				if o2 != nil {
+					coll := client.Database(o.config.Mongo.Database).Collection(collection)
+					var fullDoc bson.M
+					if err := coll.FindOne(ctx, o2).Decode(&fullDoc); err == nil {
+						pending[collection].rows = append(pending[collection].rows, extractMappedFields(fullDoc, mapping))
+					}
+					// If fetch fails (doc deleted between update and fetch), skip silently.
+					// ReplacingMergeTree will handle eventual consistency.
+				}
 			}
 
 		case "d": // DELETE

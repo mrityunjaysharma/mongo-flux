@@ -345,7 +345,8 @@ func emitLiteral(val interface{}) string {
 	case int:
 		return fmt.Sprintf("%d", v)
 	case float64:
-		return fmt.Sprintf("%v", v)
+		// Use strconv-style formatting to avoid scientific notation
+		return strings.TrimRight(strings.TrimRight(fmt.Sprintf("%.10f", v), "0"), ".")
 	case bool:
 		if v {
 			return "1"

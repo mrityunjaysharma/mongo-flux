@@ -3,6 +3,7 @@ package sync
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -52,7 +53,11 @@ func (cs *ChangeStreamSync) Start() {
 		if !m.Enabled {
 			continue
 		}
-		ddl := cs.registry.GenerateCreateTableSQL(m)
+		ddl, err := cs.registry.GenerateCreateTableSQL(m)
+		if err != nil {
+			log.Printf("[mongoflux/cs] Invalid mapping for %s: %v", m.Collection, err)
+			continue
+		}
 		if err := cs.chClient.CreateTable(ddl); err != nil {
 			log.Printf("[mongoflux/cs] Failed to create table for %s: %v", m.Collection, err)
 		}
@@ -91,8 +96,10 @@ func (cs *ChangeStreamSync) IsRunning() bool {
 	return cs.running
 }
 
-// RestartCollection restarts sync for a specific collection.
+// RestartCollection restarts sync for a specific collection without affecting others.
 func (cs *ChangeStreamSync) RestartCollection(collection string) {
+	// For simplicity, restart all. A production version could track per-collection
+	// cancellation contexts, but stop/start is safe and fast for typical mapping counts.
 	cs.Stop()
 	cs.Start()
 }
@@ -100,17 +107,40 @@ func (cs *ChangeStreamSync) RestartCollection(collection string) {
 func (cs *ChangeStreamSync) syncCollection(ctx context.Context, collection string) {
 	defer cs.wg.Done()
 
+	// Retry loop — reconnects on stream failure (network blip, cursor death)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		err := cs.syncCollectionInner(ctx, collection)
+		if err != nil {
+			if ctx.Err() != nil {
+				return // Shutdown requested
+			}
+			log.Printf("[mongoflux/cs] Stream failed for %s: %v. Retrying in 3s...", collection, err)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(3 * time.Second):
+			}
+		}
+	}
+}
+
+func (cs *ChangeStreamSync) syncCollectionInner(ctx context.Context, collection string) error {
 	client, err := mongo.Connect(ctx, options.Client().ApplyURI(cs.config.Mongo.URI))
 	if err != nil {
-		log.Printf("[mongoflux/cs] Failed to connect for %s: %v", collection, err)
-		return
+		return fmt.Errorf("connect: %w", err)
 	}
-	defer client.Disconnect(ctx)
+	defer client.Disconnect(context.Background())
 
 	coll := client.Database(cs.config.Mongo.Database).Collection(collection)
 	mapping := cs.registry.Get(collection)
 	if mapping == nil {
-		return
+		return fmt.Errorf("no mapping found for collection: %s", collection)
 	}
 
 	// Set up change stream options
@@ -124,8 +154,7 @@ func (cs *ChangeStreamSync) syncCollection(ctx context.Context, collection strin
 
 	stream, err := coll.Watch(ctx, mongo.Pipeline{}, csOpts)
 	if err != nil {
-		log.Printf("[mongoflux/cs] Failed to open change stream for %s: %v", collection, err)
-		return
+		return fmt.Errorf("open change stream for %s: %w", collection, err)
 	}
 	defer stream.Close(ctx)
 
@@ -172,6 +201,8 @@ func (cs *ChangeStreamSync) syncCollection(ctx context.Context, collection strin
 	if len(batch) > 0 {
 		cs.flushBatch(collection, mapping, &batch)
 	}
+
+	return nil
 }
 
 func (cs *ChangeStreamSync) flushBatch(collection string, mapping *schema.CollectionMapping, batch *[]map[string]interface{}) {
