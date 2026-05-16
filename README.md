@@ -1,4 +1,4 @@
-# mg-clickhouse
+# MongoFlux
 
 Real-time MongoDB to ClickHouse replication with transparent analytics query routing. Makes ClickHouse behave as a "virtual secondary" — same write stream as replica set members, zero write overhead, 12-84x faster analytical reads.
 
@@ -14,7 +14,7 @@ MongoDB excels at OLTP (transactional reads/writes — point lookups, single-doc
 | Scan 1M rows | 500-1500 ms | 3-40 ms |
 | Typical query | `findById`, `insertOne` | `SELECT avg(amount) GROUP BY region` |
 
-The traditional solution is ETL pipelines (batch jobs that copy data to a warehouse). mg-clickhouse eliminates ETL entirely — it replicates in real-time via the oplog (same stream MongoDB secondaries consume) and routes queries transparently. Your application keeps using MongoDB for OLTP, and analytical reads automatically go to ClickHouse with a single URI parameter.
+The traditional solution is ETL pipelines (batch jobs that copy data to a warehouse). MongoFlux eliminates ETL entirely — it replicates in real-time via the oplog (same stream MongoDB secondaries consume) and routes queries transparently. Your application keeps using MongoDB for OLTP, and analytical reads automatically go to ClickHouse with a single URI parameter.
 
 **The result**: OLTP + OLAP from one MongoDB connection string. No ETL, no data staleness, no application changes.
 
@@ -25,20 +25,20 @@ flowchart TD
     APP[Your Application] -->|writes + OLTP reads| MGP[(MongoDB Primary)]
     MGP -->|replication| MGS1[(Secondary 1)]
     MGP -->|replication| MGS2[(Secondary 2)]
-    APP -->|"all reads (find/aggregate)"| MGC[mg-clickhouse]
+    APP -->|"all reads (find/aggregate)"| MGC[MongoFlux]
     MGC -->|"?clickhouse=true → SQL"| CH[(ClickHouse)]
     MGC -->|"no flag → forward to MongoDB"| MGP
     MGP -->|"oplog (async)"| MGC
     MGC -->|batch INSERT| CH
 ```
 
-MongoDB runs as a 3-node replica set (`rs0`): 1 primary + 2 secondaries. For reads, the application connects to mg-clickhouse which acts as a routing proxy. If the connection URI contains `?clickhouse=true`, mg-clickhouse translates the query to SQL and sends it to ClickHouse. If the parameter is absent or false, mg-clickhouse forwards the query to MongoDB Primary unchanged. Writes always go directly to the primary. Separately, mg-clickhouse tails the primary's oplog to replicate data into ClickHouse in real-time.
+MongoDB runs as a 3-node replica set (`rs0`): 1 primary + 2 secondaries. For reads, the application connects to MongoFlux which acts as a routing proxy. If the connection URI contains `?clickhouse=true`, MongoFlux translates the query to SQL and sends it to ClickHouse. If the parameter is absent or false, MongoFlux forwards the query to MongoDB Primary unchanged. Writes always go directly to the primary. Separately, MongoFlux tails the primary's oplog to replicate data into ClickHouse in real-time.
 
 ## Benchmark Results
 
-### Break-Even Analysis: MongoDB vs MongoDB+Index vs mg-clickhouse
+### Break-Even Analysis: MongoDB vs MongoDB+Index vs MongoFlux
 
-Tested 5 complex aggregation queries (2D/3D GROUP BY, conditional counts, date bucketing, Top-N) at increasing data sizes to find where mg-clickhouse becomes faster.
+Tested 5 complex aggregation queries (2D/3D GROUP BY, conditional counts, date bucketing, Top-N) at increasing data sizes to find where MongoFlux becomes faster.
 
 ```mermaid
 xychart-beta
@@ -50,30 +50,30 @@ xychart-beta
     line [5.4, 6.4, 4.8, 10.3, 5.4, 8.7, 8.4, 11.2, 13.1, 21.5]
 ```
 
-| Size | MongoDB | Mongo+Index | mg-clickhouse | Speedup | Winner |
-|:-----|:--------|:------------|:--------------|:--------|:-------|
+| Size | MongoDB | Mongo+Index | MongoFlux | Speedup | Winner |
+|:-----|:--------|:------------|:----------|:--------|:-------|
 | 100 | 1.1 ms | 1.1 ms | 5.4 ms | — | MongoDB |
 | 500 | 2.0 ms | 1.8 ms | 6.4 ms | — | Mongo+Index |
 | 1,000 | 2.6 ms | 2.4 ms | 4.8 ms | — | Mongo+Index |
 | 5,000 | 7.4 ms | 9.2 ms | 10.3 ms | — | MongoDB |
-| 10,000 | 13.3 ms | 13.2 ms | 5.4 ms | 2.5x | mg-clickhouse ⚡ |
-| 50,000 | 55.4 ms | 70.6 ms | 8.7 ms | 6.4x | mg-clickhouse ⚡ |
-| 100,000 | 102.1 ms | 111.6 ms | 8.4 ms | 12.1x | mg-clickhouse ⚡ |
-| 500,000 | 562.6 ms | 515.2 ms | 11.2 ms | 50.1x | mg-clickhouse ⚡ |
-| 1,000,000 | 1,139 ms | 1,085 ms | 13.1 ms | 87.3x | mg-clickhouse ⚡ |
-| 2,000,000 | 2,854 ms | 2,745 ms | 21.5 ms | 132.5x | mg-clickhouse ⚡ |
+| 10,000 | 13.3 ms | 13.2 ms | 5.4 ms | 2.5x | MongoFlux ⚡ |
+| 50,000 | 55.4 ms | 70.6 ms | 8.7 ms | 6.4x | MongoFlux ⚡ |
+| 100,000 | 102.1 ms | 111.6 ms | 8.4 ms | 12.1x | MongoFlux ⚡ |
+| 500,000 | 562.6 ms | 515.2 ms | 11.2 ms | 50.1x | MongoFlux ⚡ |
+| 1,000,000 | 1,139 ms | 1,085 ms | 13.1 ms | 87.3x | MongoFlux ⚡ |
+| 2,000,000 | 2,854 ms | 2,745 ms | 21.5 ms | 132.5x | MongoFlux ⚡ |
 
-**Break-even point: ~10,000 documents.** Below this, MongoDB is faster due to HTTP round-trip overhead. Above this, mg-clickhouse wins decisively — and the gap grows linearly with data size. Indexes do not help aggregations (they're designed for point lookups, not full-collection scans).
+**Break-even point: ~10,000 documents.** Below this, MongoDB is faster due to HTTP round-trip overhead. Above this, MongoFlux wins decisively — and the gap grows linearly with data size. Indexes do not help aggregations (they're designed for point lookups, not full-collection scans).
 
 Key observations:
-- mg-clickhouse latency stays flat (5-21ms) regardless of data size — columnar scans are O(columns), not O(rows)
+- MongoFlux latency stays flat (5-21ms) regardless of data size — columnar scans are O(columns), not O(rows)
 - MongoDB latency grows linearly: ~1ms per 1,000 documents
-- At 2M documents: 132.5x faster with mg-clickhouse (21ms vs 2,854ms)
+- At 2M documents: 132.5x faster with MongoFlux (21ms vs 2,854ms)
 
 ### Read Performance — Standalone vs Distributed (500K records)
 
-| Query | MongoDB (ms) | mg-clickhouse (ms) | Distributed 3-shard (ms) | Speedup | D speedup |
-|:------|:-------------|:-------------------|:----------------------------|:----------|:----------|
+| Query | MongoDB (ms) | MongoFlux (ms) | Distributed 3-shard (ms) | Speedup | D speedup |
+|:------|:-------------|:---------------|:----------------------------|:----------|:----------|
 | [Count by status (GROUP BY)](benchmark/distributed_results.json#L5) | 822.8 | 16.5 | 61.1 | 50.0x | 13.5x |
 | [Avg amount by region](benchmark/distributed_results.json#L10) | 886.1 | 21.5 | 44.4 | 41.2x | 20.0x |
 | [Top 10 customers by spend](benchmark/distributed_results.json#L15) | 1,096.8 | 88.6 | 177.6 | 12.4x | 6.2x |
@@ -88,13 +88,13 @@ Key observations:
 
 ### Write Overhead (200K records)
 
-| Metric | Standalone MongoDB | With mg-clickhouse | Overhead |
-|:-------|:-------------------|:-------------------|:---------|
+| Metric | Standalone MongoDB | With MongoFlux | Overhead |
+|:-------|:-------------------|:---------------|:---------|
 | [Batch throughput](benchmark/write_results.json#L7) | 28,639 docs/s | 31,858 docs/s | ~0% |
 | [Single insert avg latency](benchmark/write_results.json#L30) | 2.67 ms | 2.60 ms | ~0% |
 | [Single insert P99 latency](benchmark/write_results.json#L35) | 8.25 ms | 8.08 ms | ~0% |
 
-**Zero write overhead.** mg-clickhouse tails the oplog asynchronously — MongoDB acknowledges writes before the sync layer sees them.
+**Zero write overhead.** MongoFlux tails the oplog asynchronously — MongoDB acknowledges writes before the sync layer sees them.
 
 Full results: [`benchmark/results.json`](benchmark/results.json), [`benchmark/write_results.json`](benchmark/write_results.json), [`benchmark/distributed_results.json`](benchmark/distributed_results.json)
 
@@ -104,7 +104,7 @@ Full results: [`benchmark/results.json`](benchmark/results.json), [`benchmark/wr
 
 **Write path**: All writes go directly to MongoDB Primary. No proxy, no application code changes needed.
 
-**Read path**: The application sends reads to mg-clickhouse (proxy). mg-clickhouse inspects the connection URI:
+**Read path**: The application sends reads to MongoFlux (proxy). MongoFlux inspects the connection URI:
 - `?clickhouse=true` (or `1` / `yes`) → translates the query to SQL, executes on ClickHouse, returns results
 - Parameter absent or `false` → forwards the query to MongoDB Primary unchanged
 
@@ -116,7 +116,7 @@ Full results: [`benchmark/results.json`](benchmark/results.json), [`benchmark/wr
 docker compose up --build
 ```
 
-Starts a 3-node MongoDB replica set (1 primary + 2 secondaries on ports 27017-27019), ClickHouse, and mg-clickhouse. The replica set initializes automatically. API at `http://localhost:9090`.
+Starts a 3-node MongoDB replica set (1 primary + 2 secondaries on ports 27017-27019), ClickHouse, and MongoFlux. The replica set initializes automatically. API at `http://localhost:9090`.
 
 ### Create a Mapping
 
@@ -225,7 +225,7 @@ sync:
   mode: "oplog"           # "oplog" or "changestream" (Atlas/sharded)
   batch_size: 1000
   flush_interval_ms: 500
-  resume_token_path: "/var/lib/mg-clickhouse/resume_tokens"
+  resume_token_path: "/var/lib/mongoflux/resume_tokens"
 
 api:
   port: 9090
@@ -246,7 +246,7 @@ routing:
 mkdir build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release
 make -j$(nproc)
-./mg_clickhouse /path/to/config.yaml
+./mongoflux /path/to/config.yaml
 ```
 
 Prerequisites: C++17, CMake 3.16+, mongocxx 3.9+, libcurl, OpenSSL. nlohmann/json, cpp-httplib, and yaml-cpp are fetched via CMake FetchContent.
@@ -254,8 +254,8 @@ Prerequisites: C++17, CMake 3.16+, mongocxx 3.9+, libcurl, OpenSSL. nlohmann/jso
 ## Deployment
 
 ```bash
-docker build -t mg-clickhouse .
-docker run -v ./config.yaml:/etc/mg-clickhouse/mg-clickhouse.yaml -p 9090:9090 mg-clickhouse
+docker build -t mongoflux .
+docker run -v ./config.yaml:/etc/mongoflux/mongoflux.yaml -p 9090:9090 mongoflux
 ```
 
 Kubernetes probes:
@@ -267,14 +267,14 @@ readinessProbe:
   httpGet: { path: /ready, port: 9090 }
 ```
 
-Runs as non-root (`mgch`), uses `tini` for signal handling, graceful shutdown flushes pending batches and persists oplog position.
+Runs as non-root (`mongoflux`), uses `tini` for signal handling, graceful shutdown flushes pending batches and persists oplog position.
 
 ## Running Benchmarks
 
 ```bash
 pip install pymongo requests
 
-# Break-even benchmark (MongoDB vs MongoDB+Index vs mg-clickhouse)
+# Break-even benchmark (MongoDB vs MongoDB+Index vs MongoFlux)
 python3 benchmark/breakeven_benchmark.py --max-size 2000000
 
 # Read benchmark

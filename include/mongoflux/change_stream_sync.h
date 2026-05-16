@@ -9,7 +9,7 @@
 #include "config.h"
 #include "schema_mapping.h"
 
-namespace mg_clickhouse {
+namespace mongoflux {
 
 class ClickHouseClient;
 
@@ -53,4 +53,4 @@ private:
     std::vector<std::thread> sync_threads_;
 };
 
-} // namespace mg_clickhouse
+} // namespace mongoflux

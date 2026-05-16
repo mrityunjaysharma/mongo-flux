@@ -1,6 +1,6 @@
-#include "mg_clickhouse/change_stream_sync.h"
-#include "mg_clickhouse/clickhouse_client.h"
-#include "mg_clickhouse/bson_utils.h"
+#include "mongoflux/change_stream_sync.h"
+#include "mongoflux/clickhouse_client.h"
+#include "mongoflux/bson_utils.h"
 
 #include <chrono>
 #include <fstream>
@@ -14,7 +14,7 @@
 #include <bsoncxx/json.hpp>
 #include <bsoncxx/types.hpp>
 
-namespace mg_clickhouse {
+namespace mongoflux {
 
 ChangeStreamSync::ChangeStreamSync(
     const Config& config,
@@ -41,7 +41,7 @@ void ChangeStreamSync::start() {
         try {
             ch_client_->create_table(ddl);
         } catch (const std::exception& e) {
-            std::cerr << "[mg-clickhouse] Failed to create table for "
+            std::cerr << "[mongoflux] Failed to create table for "
                       << mapping.collection << ": " << e.what() << std::endl;
         }
 
@@ -175,7 +175,7 @@ void ChangeStreamSync::flush_batch(
 
         ch_client_->insert_batch(mapping.clickhouse_database, mapping.clickhouse_table, columns, rows);
     } catch (const std::exception& e) {
-        std::cerr << "[mg-clickhouse/cs] Failed to flush batch for " << collection
+        std::cerr << "[mongoflux/cs] Failed to flush batch for " << collection
                   << " (" << batch.size() << " rows): " << e.what() << std::endl;
     }
 
@@ -200,4 +200,4 @@ std::string ChangeStreamSync::load_resume_token(const std::string& collection) {
     return token;
 }
 
-} // namespace mg_clickhouse
+} // namespace mongoflux

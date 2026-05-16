@@ -7,7 +7,7 @@
 #include <optional>
 #include <nlohmann/json.hpp>
 
-namespace mg_clickhouse {
+namespace mongoflux {
 
 /**
  * Describes how a single MongoDB field maps to a ClickHouse column.
@@ -76,4 +76,4 @@ private:
     std::unordered_map<std::string, CollectionMapping> mappings_;
 };
 
-} // namespace mg_clickhouse
+} // namespace mongoflux

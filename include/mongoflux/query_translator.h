@@ -10,7 +10,7 @@
 #include "schema_mapping.h"
 #include "expr_tree.h"
 
-namespace mg_clickhouse {
+namespace mongoflux {
 
 /**
  * Translates MongoDB query operations into ClickHouse SQL.
@@ -126,4 +126,4 @@ private:
     std::shared_ptr<SchemaMappingRegistry> registry_;
 };
 
-} // namespace mg_clickhouse
+} // namespace mongoflux

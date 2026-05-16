@@ -8,7 +8,7 @@
 
 #include "schema_mapping.h"
 
-namespace mg_clickhouse {
+namespace mongoflux {
 
 /**
  * Extract mapped fields from a BSON document into a JSON row.
@@ -106,4 +106,4 @@ inline void prepare_batch_for_insert(
     }
 }
 
-} // namespace mg_clickhouse
+} // namespace mongoflux

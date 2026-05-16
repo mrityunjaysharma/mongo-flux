@@ -8,7 +8,7 @@
 #include "clickhouse_client.h"
 #include "schema_mapping.h"
 
-namespace mg_clickhouse {
+namespace mongoflux {
 
 /**
  * MongoDB proxy that intercepts read operations and optionally routes
@@ -64,4 +64,4 @@ private:
     std::shared_ptr<QueryTranslator> translator_;
 };
 
-} // namespace mg_clickhouse
+} // namespace mongoflux

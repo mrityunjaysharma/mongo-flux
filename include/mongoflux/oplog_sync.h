@@ -11,7 +11,7 @@
 #include "config.h"
 #include "schema_mapping.h"
 
-namespace mg_clickhouse {
+namespace mongoflux {
 
 class ClickHouseClient;
 
@@ -101,4 +101,4 @@ private:
     std::thread tailer_thread_;
 };
 
-} // namespace mg_clickhouse
+} // namespace mongoflux

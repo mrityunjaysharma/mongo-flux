@@ -1,11 +1,11 @@
-#include "mg_clickhouse/management_api.h"
+#include "mongoflux/management_api.h"
 
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 #include <iostream>
-#include "mg_clickhouse/metrics.h"
+#include "mongoflux/metrics.h"
 
-namespace mg_clickhouse {
+namespace mongoflux {
 
 ManagementApi::ManagementApi(
     const ApiConfig& config,
@@ -245,10 +245,10 @@ void ManagementApi::run() {
         res.set_content(Metrics::instance().render(), "text/plain; version=0.0.4");
     });
 
-    std::cout << "[mg-clickhouse] Management API listening on "
+    std::cout << "[mongoflux] Management API listening on "
               << config_.bind << ":" << config_.port << std::endl;
 
     svr.listen(config_.bind, config_.port);
 }
 
-} // namespace mg_clickhouse
+} // namespace mongoflux

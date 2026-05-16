@@ -1,7 +1,7 @@
-#include "mg_clickhouse/oplog_sync.h"
-#include "mg_clickhouse/clickhouse_client.h"
-#include "mg_clickhouse/bson_utils.h"
-#include "mg_clickhouse/metrics.h"
+#include "mongoflux/oplog_sync.h"
+#include "mongoflux/clickhouse_client.h"
+#include "mongoflux/bson_utils.h"
+#include "mongoflux/metrics.h"
 
 #include <chrono>
 #include <fstream>
@@ -20,7 +20,7 @@
 using bsoncxx::builder::basic::kvp;
 using bsoncxx::builder::basic::make_document;
 
-namespace mg_clickhouse {
+namespace mongoflux {
 
 OplogSync::OplogSync(
     const Config& config,
@@ -46,7 +46,7 @@ void OplogSync::start() {
         try {
             ch_client_->create_table(ddl);
         } catch (const std::exception& e) {
-            std::cerr << "[mg-clickhouse/oplog] Failed to create table for "
+            std::cerr << "[mongoflux/oplog] Failed to create table for "
                       << mapping.collection << ": " << e.what() << std::endl;
         }
     }
@@ -83,7 +83,7 @@ void OplogSync::tail_oplog() {
             Metrics::instance().set_sync_running(true);
             tail_oplog_inner();
         } catch (const std::exception& e) {
-            std::cerr << "[mg-clickhouse/oplog] Connection failed: " << e.what()
+            std::cerr << "[mongoflux/oplog] Connection failed: " << e.what()
                       << ". Retrying in 3s..." << std::endl;
             Metrics::instance().inc_oplog_reconnects();
             Metrics::instance().set_sync_running(false);
@@ -122,16 +122,16 @@ void OplogSync::tail_oplog_inner() {
         }
 
         if (start_ts.timestamp == 0) {
-            std::cerr << "[mg-clickhouse/oplog] Cannot determine oplog position. "
+            std::cerr << "[mongoflux/oplog] Cannot determine oplog position. "
                       << "Is this a replica set?" << std::endl;
             running_ = false;
             return;
         }
 
-        std::cout << "[mg-clickhouse/oplog] Starting from oplog ts="
+        std::cout << "[mongoflux/oplog] Starting from oplog ts="
                   << start_ts.timestamp << ":" << start_ts.increment << std::endl;
     } else {
-        std::cout << "[mg-clickhouse/oplog] Resuming from saved oplog ts="
+        std::cout << "[mongoflux/oplog] Resuming from saved oplog ts="
                   << start_ts.timestamp << ":" << start_ts.increment << std::endl;
     }
 
@@ -192,7 +192,7 @@ void OplogSync::tail_oplog_inner() {
                 batch.rows.clear();
                 batch.last_flush = std::chrono::steady_clock::now();
             } catch (const std::exception& e) {
-                std::cerr << "[mg-clickhouse/oplog] Flush failed for "
+                std::cerr << "[mongoflux/oplog] Flush failed for "
                           << collection << " (" << batch.rows.size() << " rows): "
                           << e.what() << std::endl;
                 Metrics::instance().inc_flush_failure();
@@ -380,4 +380,4 @@ std::string OplogSync::extract_collection(const std::string& ns) {
     return ns.substr(dot + 1);
 }
 
-} // namespace mg_clickhouse
+} // namespace mongoflux

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-Write Benchmark: Standalone MongoDB vs mg-clickhouse Architecture
+Write Benchmark: Standalone MongoDB vs MongoFlux Architecture
 
-Measures the write overhead introduced by mg-clickhouse's oplog tailing.
-Since mg-clickhouse tails the oplog asynchronously (like a secondary),
+Measures the write overhead introduced by MongoFlux's oplog tailing.
+Since MongoFlux tails the oplog asynchronously (like a secondary),
 writes to MongoDB should have near-zero overhead — this benchmark verifies that.
 
 Compares:
-  1. Standalone MongoDB inserts (no mg-clickhouse running)
-  2. MongoDB inserts with mg-clickhouse actively tailing the oplog
+  1. Standalone MongoDB inserts (no MongoFlux running)
+  2. MongoDB inserts with MongoFlux actively tailing the oplog
 
 Usage:
     python3 benchmark/write_benchmark.py [--records 100000] [--batch-size 1000]
@@ -35,7 +35,7 @@ except ImportError:
 
 MONGO_URI = "mongodb://localhost:27017/?directConnection=true"
 MONGO_DB = "write_benchmark"
-MG_CLICKHOUSE_API = "http://localhost:9090"
+MONGOFLUX_API = "http://localhost:9090"
 
 STATUSES = ["pending", "processing", "shipped", "delivered", "cancelled", "returned"]
 REGIONS = ["us-east", "us-west", "eu-west", "eu-central", "ap-south", "ap-east"]
@@ -59,17 +59,17 @@ def generate_order_batch(batch_size, offset=0):
     return records
 
 
-def check_mg_clickhouse_running():
-    """Check if mg-clickhouse is running and reachable."""
+def check_mongoflux_running():
+    """Check if MongoFlux is running and reachable."""
     try:
-        resp = requests.get(f"{MG_CLICKHOUSE_API}/api/v1/status", timeout=2)
+        resp = requests.get(f"{MONGOFLUX_API}/api/v1/status", timeout=2)
         return resp.status_code == 200
     except Exception:
         return False
 
 
 def setup_mapping():
-    """Ensure mg-clickhouse has a mapping for the benchmark collection."""
+    """Ensure MongoFlux has a mapping for the benchmark collection."""
     mapping = {
         "collection": "orders",
         "clickhouse_table": "write_bench_orders",
@@ -87,14 +87,14 @@ def setup_mapping():
     }
     try:
         resp = requests.post(
-            f"{MG_CLICKHOUSE_API}/api/v1/mappings",
+            f"{MONGOFLUX_API}/api/v1/mappings",
             json=mapping,
             timeout=5
         )
         if resp.status_code in (200, 201):
             # Sync table
             requests.post(
-                f"{MG_CLICKHOUSE_API}/api/v1/mappings/orders/sync",
+                f"{MONGOFLUX_API}/api/v1/mappings/orders/sync",
                 timeout=10
             )
     except Exception:
@@ -194,7 +194,7 @@ def print_results(standalone_batch, with_sync_batch, standalone_single, with_syn
     print(f"\n{'─' * 90}")
     print(f"  BATCH INSERTS (batch_size={standalone_batch['batch_size']:,})")
     print(f"{'─' * 90}")
-    print(f"\n{'Metric':<35} {'Standalone MongoDB':<25} {'With mg-clickhouse':<25} {'Overhead':<15}")
+    print(f"\n{'Metric':<35} {'Standalone MongoDB':<25} {'With MongoFlux':<25} {'Overhead':<15}")
     print(f"{'-' * 90}")
 
     overhead_total = ((with_sync_batch["total_ms"] - standalone_batch["total_ms"]) / standalone_batch["total_ms"]) * 100
@@ -211,7 +211,7 @@ def print_results(standalone_batch, with_sync_batch, standalone_single, with_syn
     print(f"\n{'─' * 90}")
     print(f"  SINGLE-DOCUMENT INSERTS ({standalone_single['num_inserts']:,} operations)")
     print(f"{'─' * 90}")
-    print(f"\n{'Metric':<35} {'Standalone MongoDB':<25} {'With mg-clickhouse':<25} {'Overhead':<15}")
+    print(f"\n{'Metric':<35} {'Standalone MongoDB':<25} {'With MongoFlux':<25} {'Overhead':<15}")
     print(f"{'-' * 90}")
 
     overhead_single_avg = ((with_sync_single["avg_ms"] - standalone_single["avg_ms"]) / standalone_single["avg_ms"]) * 100
@@ -230,14 +230,14 @@ def print_results(standalone_batch, with_sync_batch, standalone_single, with_syn
     print(f"{'─' * 90}")
     print(f"\n  Batch insert overhead:          {overhead_total:+.1f}% total time, {overhead_avg:+.1f}% avg latency")
     print(f"  Single insert overhead:         {overhead_single_avg:+.1f}% avg latency, {overhead_single_p50:+.1f}% p50 latency")
-    print(f"\n  mg-clickhouse tails the oplog asynchronously (like a MongoDB secondary).")
+    print(f"\n  MongoFlux tails the oplog asynchronously (like a MongoDB secondary).")
     print(f"  Write overhead is expected to be near-zero since the sync is decoupled from")
-    print(f"  the write path — MongoDB acknowledges writes before mg-clickhouse processes them.")
+    print(f"  the write path — MongoDB acknowledges writes before MongoFlux processes them.")
     print()
 
 
 def main():
-    parser = argparse.ArgumentParser(description="MongoDB write benchmark: standalone vs mg-clickhouse")
+    parser = argparse.ArgumentParser(description="MongoDB write benchmark: standalone vs MongoFlux")
     parser.add_argument("--records", type=int, default=100000,
                         help="Total records for batch insert test (default: 100000)")
     parser.add_argument("--batch-size", type=int, default=1000,
@@ -246,32 +246,32 @@ def main():
                         help="Number of single-document inserts (default: 2000)")
     args = parser.parse_args()
 
-    mg_running = check_mg_clickhouse_running()
+    mg_running = check_mongoflux_running()
 
     print(f"\n{'=' * 60}")
-    print(f"  mg-clickhouse Write Benchmark")
+    print(f"  MongoFlux Write Benchmark")
     print(f"  Total records (batch test): {args.records:,}")
     print(f"  Batch size: {args.batch_size:,}")
     print(f"  Single inserts: {args.single_inserts:,}")
-    print(f"  mg-clickhouse status: {'RUNNING' if mg_running else 'NOT RUNNING'}")
+    print(f"  MongoFlux status: {'RUNNING' if mg_running else 'NOT RUNNING'}")
     print(f"{'=' * 60}\n")
 
     if mg_running:
         setup_mapping()
 
-    # Phase 1: Benchmark WITHOUT mg-clickhouse sync (use a different collection)
-    # Even with mg-clickhouse running, if the collection has no mapping, it won't sync
+    # Phase 1: Benchmark WITHOUT MongoFlux sync (use a different collection)
+    # Even with MongoFlux running, if the collection has no mapping, it won't sync
     print("[1/4] Batch inserts — standalone (no sync mapping)...")
     standalone_batch = benchmark_inserts(args.records, args.batch_size, "bench_standalone_orders")
     print(f"      {standalone_batch['throughput_docs_per_sec']:.0f} docs/s, "
           f"{standalone_batch['total_ms']:.0f} ms total")
 
-    # Phase 2: Benchmark WITH mg-clickhouse sync (use the mapped collection)
-    print("[2/4] Batch inserts — with mg-clickhouse sync...")
+    # Phase 2: Benchmark WITH MongoFlux sync (use the mapped collection)
+    print("[2/4] Batch inserts — with MongoFlux sync...")
     if mg_running:
         with_sync_batch = benchmark_inserts(args.records, args.batch_size, "orders")
     else:
-        print("      (mg-clickhouse not running, using same collection)")
+        print("      (MongoFlux not running, using same collection)")
         with_sync_batch = benchmark_inserts(args.records, args.batch_size, "orders")
     print(f"      {with_sync_batch['throughput_docs_per_sec']:.0f} docs/s, "
           f"{with_sync_batch['total_ms']:.0f} ms total")
@@ -283,7 +283,7 @@ def main():
           f"avg {standalone_single['avg_ms']:.2f} ms")
 
     # Phase 4: Single inserts — with sync
-    print(f"[4/4] Single inserts — with mg-clickhouse sync ({args.single_inserts:,} ops)...")
+    print(f"[4/4] Single inserts — with MongoFlux sync ({args.single_inserts:,} ops)...")
     with_sync_single = benchmark_single_inserts(args.single_inserts, "orders")
     print(f"      {with_sync_single['throughput_docs_per_sec']:.0f} docs/s, "
           f"avg {with_sync_single['avg_ms']:.2f} ms")
@@ -298,15 +298,15 @@ def main():
             "total_records": args.records,
             "batch_size": args.batch_size,
             "single_inserts": args.single_inserts,
-            "mg_clickhouse_running": mg_running,
+            "mongoflux_running": mg_running,
         },
         "batch_inserts": {
             "standalone": standalone_batch,
-            "with_mg_clickhouse": with_sync_batch,
+            "with_mongoflux": with_sync_batch,
         },
         "single_inserts": {
             "standalone": standalone_single,
-            "with_mg_clickhouse": with_sync_single,
+            "with_mongoflux": with_sync_single,
         },
     }
 

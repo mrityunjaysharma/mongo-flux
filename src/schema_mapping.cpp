@@ -1,10 +1,10 @@
-#include "mg_clickhouse/schema_mapping.h"
+#include "mongoflux/schema_mapping.h"
 
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
 
-namespace mg_clickhouse {
+namespace mongoflux {
 
 void to_json(nlohmann::json& j, const FieldMapping& f) {
     j = nlohmann::json{
@@ -177,4 +177,4 @@ void SchemaMappingRegistry::load_from_file(const std::string& path) {
     }
 }
 
-} // namespace mg_clickhouse
+} // namespace mongoflux

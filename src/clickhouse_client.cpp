@@ -1,4 +1,4 @@
-#include "mg_clickhouse/clickhouse_client.h"
+#include "mongoflux/clickhouse_client.h"
 
 #include <curl/curl.h>
 #include <sstream>
@@ -7,7 +7,7 @@
 #include <cstdio>
 #include <cctype>
 
-namespace mg_clickhouse {
+namespace mongoflux {
 
 struct ClickHouseClient::Impl {
     ClickHouseConfig config;
@@ -199,4 +199,4 @@ void ClickHouseClient::ping() {
     impl_->http_query("SELECT 1 FORMAT Null");
 }
 
-} // namespace mg_clickhouse
+} // namespace mongoflux

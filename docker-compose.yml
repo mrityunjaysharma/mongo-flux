@@ -89,8 +89,8 @@ services:
       retries: 10
       start_period: 10s
 
-  # mg-clickhouse (tails oplog from primary)
-  mg-clickhouse:
+  # MongoFlux (tails oplog from primary)
+  mongoflux:
     build: .
     depends_on:
       mongo-primary:
@@ -106,8 +106,8 @@ services:
     ports:
       - "9090:9090"
     volumes:
-      - ./config/mg-clickhouse-docker.yaml:/etc/mg-clickhouse/mg-clickhouse.yaml
-      - mg_ch_data:/var/lib/mg-clickhouse
+      - ./config/mongoflux-docker.yaml:/etc/mongoflux/mongoflux.yaml
+      - mongoflux_data:/var/lib/mongoflux
     restart: on-failure
 
 volumes:
@@ -115,4 +115,4 @@ volumes:
   mongo_secondary1_data:
   mongo_secondary2_data:
   ch_data:
-  mg_ch_data:
+  mongoflux_data:

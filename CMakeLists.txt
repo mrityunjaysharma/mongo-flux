@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(mg_clickhouse VERSION 0.1.0 LANGUAGES CXX)
+project(mongoflux VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -43,7 +43,7 @@ FetchContent_Declare(yaml-cpp
 FetchContent_MakeAvailable(yaml-cpp)
 
 # Source files
-set(MG_CLICKHOUSE_SOURCES
+set(MONGOFLUX_SOURCES
     src/main.cpp
     src/config.cpp
     src/schema_mapping.cpp
@@ -58,11 +58,11 @@ set(MG_CLICKHOUSE_SOURCES
 )
 
 # Library target
-add_library(mg_clickhouse_lib ${MG_CLICKHOUSE_SOURCES})
-target_include_directories(mg_clickhouse_lib PUBLIC
+add_library(mongoflux_lib ${MONGOFLUX_SOURCES})
+target_include_directories(mongoflux_lib PUBLIC
     ${CMAKE_SOURCE_DIR}/include
 )
-target_link_libraries(mg_clickhouse_lib PUBLIC
+target_link_libraries(mongoflux_lib PUBLIC
     mongo::mongocxx_shared
     mongo::bsoncxx_shared
     CURL::libcurl
@@ -75,12 +75,12 @@ target_link_libraries(mg_clickhouse_lib PUBLIC
 )
 
 # Executable
-add_executable(mg_clickhouse src/main.cpp)
-target_link_libraries(mg_clickhouse PRIVATE mg_clickhouse_lib)
+add_executable(mongoflux src/main.cpp)
+target_link_libraries(mongoflux PRIVATE mongoflux_lib)
 
 # Install
-install(TARGETS mg_clickhouse RUNTIME DESTINATION bin)
-install(FILES config/mg-clickhouse.yaml DESTINATION etc/mg-clickhouse)
+install(TARGETS mongoflux RUNTIME DESTINATION bin)
+install(FILES config/mongoflux.yaml DESTINATION etc/mongoflux)
 
 if(BUILD_TESTS)
     enable_testing()

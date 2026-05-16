@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>mg-clickhouse — Design Document</title>
+    <title>MongoFlux — Design Document</title>
     <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
     <style>
         :root { --accent: #1a56db; --bg: #fff; --fg: #111; --muted: #6b7280; --border: #e5e7eb; --card: #f9fafb; }
@@ -30,7 +30,7 @@
 </head>
 <body>
 
-<h1>mg-clickhouse</h1>
+<h1>MongoFlux</h1>
 <p class="subtitle">Design Document v1.2 — Real-time MongoDB → ClickHouse CDC + Query Routing</p>
 
 <div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin:1rem 0;">
@@ -42,14 +42,14 @@
 
 <h2>1. Architecture</h2>
 
-<p>MongoDB runs as a 3-node replica set (<code>rs0</code>): 1 primary + 2 secondaries. For reads, the application connects to mg-clickhouse which acts as a routing proxy. If the connection URI contains <code>?clickhouse=true</code>, mg-clickhouse translates the query to SQL and sends it to ClickHouse. If the parameter is absent or false, mg-clickhouse forwards the query to MongoDB Primary unchanged. Writes go directly to the primary.</p>
+<p>MongoDB runs as a 3-node replica set (<code>rs0</code>): 1 primary + 2 secondaries. For reads, the application connects to MongoFlux which acts as a routing proxy. If the connection URI contains <code>?clickhouse=true</code>, MongoFlux translates the query to SQL and sends it to ClickHouse. If the parameter is absent or false, MongoFlux forwards the query to MongoDB Primary unchanged. Writes go directly to the primary.</p>
 
 <div class="mermaid">
 flowchart TD
     APP[Application] -->|writes| MGP[(MongoDB Primary)]
     MGP -->|replication| MGS1[(Secondary 1)]
     MGP -->|replication| MGS2[(Secondary 2)]
-    APP -->|"all reads (find/aggregate)"| ROUTER[mg-clickhouse<br/>Query Router]
+    APP -->|"all reads (find/aggregate)"| ROUTER[MongoFlux<br/>Query Router]
     ROUTER -->|"?clickhouse=true → translate"| XLAT[Query Translator<br/>BSON → AST → SQL]
     XLAT -->|SELECT| CH[(ClickHouse)]
     ROUTER -->|"no flag → forward"| MGP
@@ -62,39 +62,39 @@ flowchart TD
 <h2>2. Data Flow</h2>
 
 <h3>Write Path (zero overhead)</h3>
-<p>Writes target the MongoDB primary. The two secondaries replicate via the standard MongoDB protocol. mg-clickhouse tails the primary's oplog independently.</p>
+<p>Writes target the MongoDB primary. The two secondaries replicate via the standard MongoDB protocol. MongoFlux tails the primary's oplog independently.</p>
 <div class="mermaid">
 sequenceDiagram
     participant App
     participant Primary as MongoDB Primary
     participant S1 as Secondary 1
     participant S2 as Secondary 2
-    participant mgch as mg-clickhouse
+    participant mf as MongoFlux
     participant CH as ClickHouse
 
     App->>Primary: insert/update
     Primary-->>App: ack ✓
     Primary->>S1: replication (async)
     Primary->>S2: replication (async)
-    Note right of App: Write done.<br/>mg-clickhouse not in path.
-    Primary->>mgch: oplog entry (async)
-    mgch->>CH: batch INSERT
-    mgch->>mgch: save position
+    Note right of App: Write done.<br/>MongoFlux not in path.
+    Primary->>mf: oplog entry (async)
+    mf->>CH: batch INSERT
+    mf->>mf: save position
 </div>
 
 <h3>Read Path (query routing)</h3>
-<p>The application sends all reads to mg-clickhouse. If <code>?clickhouse=true</code> is in the URI, the query is translated to SQL and executed on ClickHouse. Otherwise, it's forwarded to MongoDB Primary unchanged.</p>
+<p>The application sends all reads to MongoFlux. If <code>?clickhouse=true</code> is in the URI, the query is translated to SQL and executed on ClickHouse. Otherwise, it's forwarded to MongoDB Primary unchanged.</p>
 <div class="mermaid">
 sequenceDiagram
-    App->>mg-clickhouse: find({status:"shipped"}, ?clickhouse=true)
-    mg-clickhouse->>mg-clickhouse: BSON → AST → SQL
-    mg-clickhouse->>ClickHouse: SELECT * WHERE status='shipped'
+    App->>MongoFlux: find({status:"shipped"}, ?clickhouse=true)
+    MongoFlux->>MongoFlux: BSON → AST → SQL
+    MongoFlux->>ClickHouse: SELECT * WHERE status='shipped'
     ClickHouse-->>App: results
 </div>
 <div class="mermaid">
 sequenceDiagram
-    App->>mg-clickhouse: find({_id: "abc123"}) [no clickhouse param]
-    mg-clickhouse->>MongoDB Primary: forward query unchanged
+    App->>MongoFlux: find({_id: "abc123"}) [no clickhouse param]
+    MongoFlux->>MongoDB Primary: forward query unchanged
     MongoDB Primary-->>App: results
 </div>
 
@@ -114,10 +114,10 @@ graph LR
 <div class="mermaid">
 graph LR
     subgraph Standalone
-        A[mg-clickhouse] -->|INSERT| B[MergeTree]
+        A[MongoFlux] -->|INSERT| B[MergeTree]
     end
     subgraph Clustered
-        C[mg-clickhouse] -->|INSERT| D[Distributed]
+        C[MongoFlux] -->|INSERT| D[Distributed]
         D --> E[Shard 1]
         D --> F[Shard 2]
         D --> G[Shard 3]
@@ -160,7 +160,7 @@ xychart-beta
 
 <h3>Writes (200K records)</h3>
 <table>
-    <tr><th>Metric</th><th>MongoDB alone</th><th>With mg-clickhouse</th><th>Overhead</th></tr>
+    <tr><th>Metric</th><th>MongoDB alone</th><th>With MongoFlux</th><th>Overhead</th></tr>
     <tr><td>Batch throughput</td><td>28,639 docs/s</td><td>31,858 docs/s</td><td>0%</td></tr>
     <tr><td>Single insert P99</td><td>8.25 ms</td><td>8.08 ms</td><td>0%</td></tr>
 </table>
@@ -187,13 +187,13 @@ api:
 <p>Validated at startup: required fields, port ranges, batch_size (1-1M), mode must be <code>oplog</code> or <code>changestream</code>.</p>
 
 <h2>6. Deployment</h2>
-<p>The default deployment uses a 3-node MongoDB replica set (<code>rs0</code>) with 1 primary and 2 secondaries. mg-clickhouse connects using the full replica set URI and automatically follows primary elections.</p>
+<p>The default deployment uses a 3-node MongoDB replica set (<code>rs0</code>) with 1 primary and 2 secondaries. MongoFlux connects using the full replica set URI and automatically follows primary elections.</p>
 <div class="mermaid">
 flowchart LR
     APP[Apps] --> MGP[(MongoDB Primary)]
     MGP --- MGS1[(Secondary 1)]
     MGP --- MGS2[(Secondary 2)]
-    MGP -->|oplog| MGC[mg-clickhouse]
+    MGP -->|oplog| MGC[MongoFlux]
     MGC -->|INSERT| LB[CH Load Balancer]
     LB --> S1[Shard 1]
     LB --> S2[Shard 2]
@@ -203,7 +203,7 @@ flowchart LR
 <table>
     <tr><th>Aspect</th><th>Detail</th></tr>
     <tr><td>MongoDB</td><td>3-node replica set: <code>mongo-primary</code>, <code>mongo-secondary1</code>, <code>mongo-secondary2</code> with auto <code>rs.initiate()</code></td></tr>
-    <tr><td>Container</td><td>Non-root <code>mgch</code>, <code>tini</code> PID 1, graceful shutdown</td></tr>
+    <tr><td>Container</td><td>Non-root <code>mongoflux</code>, <code>tini</code> PID 1, graceful shutdown</td></tr>
     <tr><td>K8s probes</td><td><code>/health</code> (liveness), <code>/ready</code> (checks CH)</td></tr>
     <tr><td>Security</td><td>RAII CURL, URL-encoded creds, deploy API behind gateway</td></tr>
 </table>
@@ -211,10 +211,10 @@ flowchart LR
 <h2>7. Failure Modes</h2>
 <table>
     <tr><th>Failure</th><th>Recovery</th><th>Data Loss</th></tr>
-    <tr><td>mg-clickhouse crash</td><td>Resume from saved position</td><td>None</td></tr>
+    <tr><td>MongoFlux crash</td><td>Resume from saved position</td><td>None</td></tr>
     <tr><td>ClickHouse down</td><td>Retry on next flush</td><td>None</td></tr>
     <tr><td>MongoDB primary failover</td><td>Driver auto-discovers new primary via replica set URI (3s backoff)</td><td>None</td></tr>
-    <tr><td>MongoDB secondary down</td><td>No impact — mg-clickhouse tails primary only</td><td>None</td></tr>
+    <tr><td>MongoDB secondary down</td><td>No impact — MongoFlux tails primary only</td><td>None</td></tr>
     <tr><td>Corrupted token</td><td>Start from oplog tail</td><td>Possible gap</td></tr>
 </table>
 

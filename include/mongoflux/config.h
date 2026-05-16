@@ -3,7 +3,7 @@
 #include <string>
 #include <cstdint>
 
-namespace mg_clickhouse {
+namespace mongoflux {
 
 struct MongoConfig {
     std::string uri = "mongodb://localhost:27017";
@@ -23,7 +23,7 @@ struct SyncConfig {
     std::string mode = "oplog"; // "oplog" (direct tailing) or "changestream"
     int batch_size = 1000;
     int flush_interval_ms = 500;
-    std::string resume_token_path = "/var/lib/mg-clickhouse/resume_tokens";
+    std::string resume_token_path = "/var/lib/mongoflux/resume_tokens";
     int max_pending_rows = 100000;       // Backpressure: max rows buffered before blocking
     bool propagate_deletes = false;      // Insert tombstone rows on delete operations
     std::string delete_column = "_deleted"; // Column name for soft-delete flag
@@ -58,4 +58,4 @@ struct Config {
  */
 Config load_config(const std::string& path);
 
-} // namespace mg_clickhouse
+} // namespace mongoflux

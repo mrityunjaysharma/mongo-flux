@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-Break-Even Benchmark: MongoDB vs MongoDB+Index vs mg-clickhouse
+Break-Even Benchmark: MongoDB vs MongoDB+Index vs MongoFlux
 
 Tests complex aggregation queries at increasing data sizes to find the
-break-even point where mg-clickhouse becomes faster than MongoDB.
+break-even point where MongoFlux becomes faster than MongoDB.
 
 Compares three scenarios:
   1. MongoDB (no index) — raw collection scan
   2. MongoDB (with index) — compound index on GROUP BY fields
-  3. mg-clickhouse — columnar analytics via real-time CDC sync
+  3. MongoFlux — columnar analytics via real-time CDC sync
 
 Data sizes: 100, 500, 1K, 5K, 10K, 50K, 100K, 500K, 1M, 5M
 
@@ -255,7 +255,7 @@ def render_chart(results: List[Dict]) -> None:
     print(f"\n{'='*90}")
     print("  BREAK-EVEN CHART: Avg Query Latency (ms) by Data Size")
     print(f"{'='*90}\n")
-    print(f"  {'Size':<12} {'MongoDB':<12} {'Mongo+Idx':<12} {'mg-clickhouse':<14} {'Speedup':<12} {'Winner'}")
+    print(f"  {'Size':<12} {'MongoDB':<12} {'Mongo+Idx':<12} {'MongoFlux':<14} {'Speedup':<12} {'Winner'}")
     print(f"  {'-'*74}")
 
     for r in results:
@@ -266,7 +266,7 @@ def render_chart(results: List[Dict]) -> None:
 
         best = min(r['mongo_avg'], r['mongo_idx_avg'], r['ch_avg'])
         if best == r['ch_avg']:
-            winner = "mg-clickhouse ⚡"
+            winner = "MongoFlux ⚡"
             speedup = r['mongo_avg'] / max(r['ch_avg'], 0.01)
         elif best == r['mongo_idx_avg']:
             winner = "Mongo+Index"
@@ -283,15 +283,15 @@ def render_chart(results: List[Dict]) -> None:
     for r in results:
         if r['ch_avg'] < r['mongo_avg'] and r['ch_avg'] < r['mongo_idx_avg']:
             print(f"\n  ⚡ Break-even point: ~{r['size']:,} documents")
-            print(f"     At this size, mg-clickhouse becomes faster than MongoDB (with or without indexes)")
+            print(f"     At this size, MongoFlux becomes faster than MongoDB (with or without indexes)")
             break
     else:
-        print(f"\n  ℹ  mg-clickhouse did not surpass MongoDB in the tested range.")
+        print(f"\n  ℹ  MongoFlux did not surpass MongoDB in the tested range.")
         print(f"     Try larger data sizes with --max-size")
 
     # Bar chart
     print(f"\n  Latency comparison (log scale, shorter = faster):")
-    print(f"  {'Size':<10} MongoDB          Mongo+Idx        mg-clickhouse")
+    print(f"  {'Size':<10} MongoDB          Mongo+Idx        MongoFlux")
     for r in results:
         size_str = f"{r['size']:,}"
         m_bar = "█" * min(int(r['mongo_avg'] / 5), 40) if r['mongo_avg'] < 10000 else "█" * 40 + "→"
@@ -309,7 +309,7 @@ def render_chart(results: List[Dict]) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Break-even benchmark: MongoDB vs mg-clickhouse")
+    parser = argparse.ArgumentParser(description="Break-even benchmark: MongoDB vs MongoFlux")
     parser.add_argument("--max-size", type=int, default=100_000, help="Max data size to test (default: 100000)")
     parser.add_argument("--iterations", type=int, default=3, help="Query iterations per size")
     args = parser.parse_args()
@@ -319,7 +319,7 @@ def main() -> None:
         sys.exit(f"ERROR: --max-size must be >= {DATA_SIZES[0]}")
 
     print(f"\n{'='*90}")
-    print(f"  Break-Even Benchmark: MongoDB vs MongoDB+Index vs mg-clickhouse")
+    print(f"  Break-Even Benchmark: MongoDB vs MongoDB+Index vs MongoFlux")
     print(f"  Data sizes: {', '.join(f'{s:,}' for s in sizes)}")
     print(f"  Queries: {len(QUERIES)} complex aggregations × {args.iterations} iterations")
     print(f"{'='*90}\n")
@@ -334,7 +334,7 @@ def main() -> None:
     try:
         ch_query("SELECT 1")
     except Exception as e:
-        sys.exit(f"ERROR: mg-clickhouse (ClickHouse) not reachable: {e}")
+        sys.exit(f"ERROR: MongoFlux (ClickHouse) not reachable: {e}")
 
     db = client[MONGO_DB]
     results: List[Dict[str, Any]] = []
@@ -364,7 +364,7 @@ def main() -> None:
         mongo_idx_times = benchmark_mongo(coll, QUERIES, args.iterations)
         mongo_idx_avg = statistics.mean(mongo_idx_times)
 
-        # --- mg-clickhouse ---
+        # --- MongoFlux ---
         ch_setup_table()
         ch_load_data(docs)
 

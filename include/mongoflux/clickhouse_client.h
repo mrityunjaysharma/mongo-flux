@@ -7,7 +7,7 @@
 
 #include "config.h"
 
-namespace mg_clickhouse {
+namespace mongoflux {
 
 /**
  * Result row from a ClickHouse query, represented as key-value pairs.
@@ -60,4 +60,4 @@ private:
     std::unique_ptr<Impl> impl_;
 };
 
-} // namespace mg_clickhouse
+} // namespace mongoflux

@@ -1,10 +1,10 @@
-#include "mg_clickhouse/config.h"
+#include "mongoflux/config.h"
 
 #include <fstream>
 #include <stdexcept>
 #include <yaml-cpp/yaml.h>
 
-namespace mg_clickhouse {
+namespace mongoflux {
 
 Config load_config(const std::string& path) {
     YAML::Node root;
@@ -93,4 +93,4 @@ Config load_config(const std::string& path) {
     return config;
 }
 
-} // namespace mg_clickhouse
+} // namespace mongoflux

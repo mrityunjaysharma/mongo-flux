@@ -3,7 +3,7 @@
 #include <string>
 #include <unordered_map>
 
-namespace mg_clickhouse {
+namespace mongoflux {
 
 /**
  * Parse a MongoDB connection URI and extract query parameters.
@@ -28,4 +28,4 @@ ParsedUri parse_mongo_uri(const std::string& uri);
  */
 bool has_clickhouse_routing(const ParsedUri& uri, const std::string& param_name);
 
-} // namespace mg_clickhouse
+} // namespace mongoflux

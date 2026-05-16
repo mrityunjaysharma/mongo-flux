@@ -1,4 +1,4 @@
-# mg-clickhouse configuration
+# MongoFlux configuration
 # For production, override sensitive values via environment variables.
 
 mongo:
@@ -16,7 +16,7 @@ sync:
   mode: "oplog"                     # "oplog" (direct replica set) or "changestream" (Atlas/sharded)
   batch_size: 1000                  # Rows per flush (1-1000000)
   flush_interval_ms: 500            # Max ms between flushes (1-60000)
-  resume_token_path: "/var/lib/mg-clickhouse/resume_tokens"
+  resume_token_path: "/var/lib/mongoflux/resume_tokens"
 
 api:
   port: 9090

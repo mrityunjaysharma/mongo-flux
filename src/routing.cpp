@@ -1,9 +1,9 @@
-#include "mg_clickhouse/routing.h"
+#include "mongoflux/routing.h"
 
 #include <algorithm>
 #include <sstream>
 
-namespace mg_clickhouse {
+namespace mongoflux {
 
 ParsedUri parse_mongo_uri(const std::string& uri) {
     ParsedUri result;
@@ -80,4 +80,4 @@ bool has_clickhouse_routing(const ParsedUri& uri, const std::string& param_name)
     return value == "true" || value == "1" || value == "yes";
 }
 
-} // namespace mg_clickhouse
+} // namespace mongoflux

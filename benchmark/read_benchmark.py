@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Read Benchmark: MongoDB vs mg-clickhouse
+Read Benchmark: MongoDB vs MongoFlux
 
 Generates extensive sample data, loads it into both MongoDB and ClickHouse,
 then runs identical analytical queries against both to compare read performance.
@@ -346,7 +346,7 @@ def print_results(results, record_count):
     print("\n" + "=" * 100)
     print(f"  READ BENCHMARK RESULTS — {record_count:,} records per collection")
     print("=" * 100)
-    print(f"\n{'Query':<50} {'MongoDB (ms)':<15} {'mg-clickhouse (ms)':<19} {'Speedup':<10}")
+    print(f"\n{'Query':<50} {'MongoDB (ms)':<15} {'MongoFlux (ms)':<19} {'Speedup':<10}")
     print("-" * 92)
 
     for r in results:
@@ -362,13 +362,13 @@ def print_results(results, record_count):
     max_speedup = max(r["speedup"] for r in results)
     max_query = next(r["query"] for r in results if r["speedup"] == max_speedup)
 
-    print(f"\n  Average speedup (mg-clickhouse vs MongoDB): {avg_speedup:.1f}x")
+    print(f"\n  Average speedup (MongoFlux vs MongoDB): {avg_speedup:.1f}x")
     print(f"  Max speedup: {max_speedup:.1f}x on '{max_query}'")
     print()
 
     # Detailed breakdown
     print("\nDetailed Timing (avg / p50 / min):")
-    print(f"{'Query':<50} {'MongoDB':<25} {'mg-clickhouse':<25}")
+    print(f"{'Query':<50} {'MongoDB':<25} {'MongoFlux':<25}")
     print("-" * 100)
     for r in results:
         m = f"{r['mongo_avg_ms']:.1f} / {r['mongo_p50_ms']:.1f} / {r['mongo_min_ms']:.1f}"
@@ -383,7 +383,7 @@ def print_results(results, record_count):
 # ============================================================
 
 def main():
-    parser = argparse.ArgumentParser(description="MongoDB vs mg-clickhouse read benchmark")
+    parser = argparse.ArgumentParser(description="MongoDB vs MongoFlux read benchmark")
     parser.add_argument("--records", type=int, default=100000,
                         help="Number of records per collection (default: 100000)")
     parser.add_argument("--iterations", type=int, default=5,
@@ -396,7 +396,7 @@ def main():
     iterations = args.iterations
 
     print(f"\n{'='*60}")
-    print(f"  mg-clickhouse Read Benchmark")
+    print(f"  MongoFlux Read Benchmark")
     print(f"  Records per collection: {record_count:,}")
     print(f"  Query iterations: {iterations}")
     print(f"{'='*60}\n")
@@ -417,7 +417,7 @@ def main():
         print(f"      Done in {mongo_load_time:.1f}s")
 
         # Load into ClickHouse
-        print("[3/4] Loading data into mg-clickhouse...")
+        print("[3/4] Loading data into MongoFlux...")
         t0 = time.perf_counter()
         load_clickhouse("orders", orders)
         load_clickhouse("events", events)
@@ -426,7 +426,7 @@ def main():
     else:
         print("[1/4] Skipping data generation (--skip-load)")
         print("[2/4] Skipping MongoDB load")
-        print("[3/4] Skipping mg-clickhouse load")
+        print("[3/4] Skipping MongoFlux load")
 
     # Run benchmark
     print(f"[4/4] Running benchmark ({iterations} iterations per query)...")

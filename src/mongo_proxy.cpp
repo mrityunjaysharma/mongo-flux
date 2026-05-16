@@ -1,5 +1,5 @@
-#include "mg_clickhouse/mongo_proxy.h"
-#include "mg_clickhouse/routing.h"
+#include "mongoflux/mongo_proxy.h"
+#include "mongoflux/routing.h"
 
 #include <mongocxx/client.hpp>
 #include <mongocxx/uri.hpp>
@@ -8,7 +8,7 @@
 #include <bsoncxx/document/view.hpp>
 #include <bsoncxx/array/view.hpp>
 
-namespace mg_clickhouse {
+namespace mongoflux {
 
 MongoProxy::MongoProxy(
     const Config& config,
@@ -105,4 +105,4 @@ nlohmann::json MongoProxy::execute_aggregate(
     return docs;
 }
 
-} // namespace mg_clickhouse
+} // namespace mongoflux

@@ -10,7 +10,7 @@
 #include "change_stream_sync.h"
 #include "oplog_sync.h"
 
-namespace mg_clickhouse {
+namespace mongoflux {
 
 /**
  * HTTP management API for schema mappings and system status.
@@ -53,4 +53,4 @@ private:
     std::thread server_thread_;
 };
 
-} // namespace mg_clickhouse
+} // namespace mongoflux

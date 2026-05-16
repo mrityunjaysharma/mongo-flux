@@ -1,9 +1,9 @@
-#include "mg_clickhouse/expr_tree.h"
+#include "mongoflux/expr_tree.h"
 
 #include <sstream>
 #include <stdexcept>
 
-namespace mg_clickhouse {
+namespace mongoflux {
 
 namespace {
 
@@ -225,4 +225,4 @@ std::string emit_query(const QueryTree& tree) {
     return sql.str();
 }
 
-} // namespace mg_clickhouse
+} // namespace mongoflux

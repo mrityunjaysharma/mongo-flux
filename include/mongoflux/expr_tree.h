@@ -6,7 +6,7 @@
 #include <variant>
 #include <stdexcept>
 
-namespace mg_clickhouse {
+namespace mongoflux {
 
 /**
  * Expression tree nodes for representing MongoDB queries as an AST.
@@ -225,4 +225,4 @@ std::string emit_sql(const ExprNodePtr& node);
  */
 std::string emit_query(const QueryTree& tree);
 
-} // namespace mg_clickhouse
+} // namespace mongoflux

@@ -1,4 +1,4 @@
-#include "mg_clickhouse/query_translator.h"
+#include "mongoflux/query_translator.h"
 
 #include <sstream>
 #include <stdexcept>
@@ -7,7 +7,7 @@
 #include <bsoncxx/array/element.hpp>
 #include <bsoncxx/json.hpp>
 
-namespace mg_clickhouse {
+namespace mongoflux {
 
 QueryTranslator::QueryTranslator(std::shared_ptr<SchemaMappingRegistry> registry)
     : registry_(std::move(registry)) {}
@@ -814,4 +814,4 @@ std::string QueryTranslator::strip_dollar(const std::string& field) {
     return field;
 }
 
-} // namespace mg_clickhouse
+} // namespace mongoflux

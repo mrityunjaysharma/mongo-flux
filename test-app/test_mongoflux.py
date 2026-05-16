@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """
-mg-clickhouse Integration Test Suite
+MongoFlux Integration Test Suite
 
 Tests CRUD operations on MongoDB, verifies real-time sync to ClickHouse,
 and benchmarks aggregation queries comparing both engines.
 
 Usage:
-    python3 test-app/test_mg_clickhouse.py
-    python3 test-app/test_mg_clickhouse.py --cleanup
+    python3 test-app/test_mongoflux.py
+    python3 test-app/test_mongoflux.py --cleanup
 
 Environment Variables (override defaults):
     MONGO_URI           - MongoDB connection string (default: localhost:27017)
     CH_URL              - ClickHouse HTTP URL (default: http://localhost:8123)
-    MG_CLICKHOUSE_API   - mg-clickhouse API URL (default: http://localhost:9090)
+    MONGOFLUX_API       - MongoFlux API URL (default: http://localhost:9090)
 """
 
 import json
@@ -53,11 +53,11 @@ logger = logging.getLogger(__name__)
 
 MONGO_URI = os.environ.get("MONGO_URI", "mongodb://localhost:27017/?directConnection=true")
 MONGO_DB = os.environ.get("MONGO_DB", "myapp")
-MONGO_COLLECTION = "mg_clickhouse_test"
+MONGO_COLLECTION = "mongoflux_test"
 CH_URL = os.environ.get("CH_URL", "http://localhost:8123")
 CH_DB = os.environ.get("CH_DB", "myapp")
-CH_TABLE = "mg_clickhouse_test"
-MG_CLICKHOUSE_API = os.environ.get("MG_CLICKHOUSE_API", "http://localhost:9090")
+CH_TABLE = "mongoflux_test"
+MONGOFLUX_API = os.environ.get("MONGOFLUX_API", "http://localhost:9090")
 
 # HTTP session with connection pooling and timeouts
 SESSION = requests.Session()
@@ -83,13 +83,13 @@ def ch_query(sql: str) -> str:
 
 
 def api_call(method: str, path: str, data: Optional[Dict] = None) -> Dict[str, Any]:
-    """Call the mg-clickhouse management API.
+    """Call the MongoFlux management API.
 
     Raises:
-        requests.ConnectionError: If mg-clickhouse API is unreachable.
+        requests.ConnectionError: If MongoFlux API is unreachable.
         RuntimeError: If API returns an error response.
     """
-    url = f"{MG_CLICKHOUSE_API}{path}"
+    url = f"{MONGOFLUX_API}{path}"
     if method == "GET":
         resp = SESSION.get(url, timeout=REQUEST_TIMEOUT)
     elif method == "POST":
@@ -386,18 +386,18 @@ def run_aggregation_benchmark(coll: pymongo.collection.Collection) -> List[Dict[
 
 
 def main() -> None:
-    print_header("mg-clickhouse Integration Test")
+    print_header("MongoFlux Integration Test")
     print(f"  MongoDB:    {MONGO_URI}")
     print(f"  ClickHouse: {CH_URL}")
-    print(f"  API:        {MG_CLICKHOUSE_API}")
+    print(f"  API:        {MONGOFLUX_API}")
     print(f"  Database:   {MONGO_DB}")
     print(f"  Collection: {MONGO_COLLECTION}")
 
     # Preflight checks
     try:
-        SESSION.get(f"{MG_CLICKHOUSE_API}/health", timeout=5)
+        SESSION.get(f"{MONGOFLUX_API}/health", timeout=5)
     except requests.ConnectionError:
-        sys.exit(f"ERROR: mg-clickhouse not reachable at {MG_CLICKHOUSE_API}\n"
+        sys.exit(f"ERROR: MongoFlux not reachable at {MONGOFLUX_API}\n"
                  f"  Start it with: docker compose up --build")
 
     try:
@@ -427,7 +427,7 @@ def main() -> None:
     try:
         setup()
     except requests.ConnectionError:
-        sys.exit(f"ERROR: Cannot connect to mg-clickhouse API at {MG_CLICKHOUSE_API}")
+        sys.exit(f"ERROR: Cannot connect to MongoFlux API at {MONGOFLUX_API}")
     except RuntimeError as e:
         sys.exit(f"ERROR: Setup failed: {e}")
 

@@ -1,10 +1,10 @@
-# mg-clickhouse — Design Document
+# MongoFlux — Design Document
 
 **v1.2** | 2026-05-15 | Production
 
 ## 1. What It Does
 
-mg-clickhouse replicates MongoDB to ClickHouse in real-time using oplog tailing (same as MongoDB secondaries), and routes analytical reads to ClickHouse transparently via a single URI parameter.
+MongoFlux replicates MongoDB to ClickHouse in real-time using oplog tailing (same as MongoDB secondaries), and routes analytical reads to ClickHouse transparently via a single URI parameter.
 
 **Goals**: Zero write overhead, sub-second replication, no app code changes, standalone + clustered ClickHouse.
 
@@ -12,14 +12,14 @@ mg-clickhouse replicates MongoDB to ClickHouse in real-time using oplog tailing 
 
 ## 2. Architecture
 
-MongoDB runs as a 3-node replica set (1 primary + 2 secondaries). For reads, the application connects to mg-clickhouse which acts as a routing proxy. If the connection URI contains `?clickhouse=true`, mg-clickhouse translates the query to SQL and sends it to ClickHouse. If the parameter is absent or false, mg-clickhouse forwards the query to MongoDB Primary unchanged. Writes go directly to the primary.
+MongoDB runs as a 3-node replica set (1 primary + 2 secondaries). For reads, the application connects to MongoFlux which acts as a routing proxy. If the connection URI contains `?clickhouse=true`, MongoFlux translates the query to SQL and sends it to ClickHouse. If the parameter is absent or false, MongoFlux forwards the query to MongoDB Primary unchanged. Writes go directly to the primary.
 
 ```mermaid
 flowchart TD
     APP[Application] -->|writes| MGP[(MongoDB Primary)]
     MGP -->|replication| MGS1[(MongoDB Secondary 1)]
     MGP -->|replication| MGS2[(MongoDB Secondary 2)]
-    APP -->|"all reads (find/aggregate)"| ROUTER[mg-clickhouse<br/>Query Router]
+    APP -->|"all reads (find/aggregate)"| ROUTER[MongoFlux<br/>Query Router]
     ROUTER -->|"?clickhouse=true → translate"| XLAT[Query Translator<br/>BSON → AST → SQL]
     XLAT -->|SELECT| CH[(ClickHouse)]
     ROUTER -->|"no flag → forward"| MGP
@@ -33,7 +33,7 @@ flowchart TD
 
 ### Writes (zero overhead)
 
-Writes target the MongoDB primary. The two secondaries replicate via the standard MongoDB replication protocol. mg-clickhouse tails the primary's oplog independently.
+Writes target the MongoDB primary. The two secondaries replicate via the standard MongoDB replication protocol. MongoFlux tails the primary's oplog independently.
 
 ```mermaid
 sequenceDiagram
@@ -41,35 +41,35 @@ sequenceDiagram
     participant Primary as MongoDB Primary
     participant S1 as MongoDB Secondary 1
     participant S2 as MongoDB Secondary 2
-    participant mgch as mg-clickhouse
+    participant mf as MongoFlux
     participant CH as ClickHouse
 
     App->>Primary: insert/update
     Primary-->>App: ack ✓
     Primary->>S1: replication (async)
     Primary->>S2: replication (async)
-    Note right of App: Done. mg-clickhouse<br/>not in write path.
-    Primary->>mgch: oplog entry (async)
-    mgch->>CH: batch INSERT
-    mgch->>mgch: save position
+    Note right of App: Done. MongoFlux<br/>not in write path.
+    Primary->>mf: oplog entry (async)
+    mf->>CH: batch INSERT
+    mf->>mf: save position
 ```
 
 ### Reads (query routing)
 
-The application sends all reads to mg-clickhouse. mg-clickhouse inspects the URI for `?clickhouse=true`. If present, it translates the query to SQL and executes on ClickHouse. If absent or false, it forwards the query to MongoDB Primary unchanged.
+The application sends all reads to MongoFlux. MongoFlux inspects the URI for `?clickhouse=true`. If present, it translates the query to SQL and executes on ClickHouse. If absent or false, it forwards the query to MongoDB Primary unchanged.
 
 ```mermaid
 sequenceDiagram
-    App->>mg-clickhouse: find({status:"shipped"}, ?clickhouse=true)
-    mg-clickhouse->>mg-clickhouse: BSON → AST → SQL
-    mg-clickhouse->>ClickHouse: SELECT * WHERE status='shipped'
+    App->>MongoFlux: find({status:"shipped"}, ?clickhouse=true)
+    MongoFlux->>MongoFlux: BSON → AST → SQL
+    MongoFlux->>ClickHouse: SELECT * WHERE status='shipped'
     ClickHouse-->>App: results
 ```
 
 ```mermaid
 sequenceDiagram
-    App->>mg-clickhouse: find({_id: "abc123"}) [no clickhouse param]
-    mg-clickhouse->>MongoDB Primary: forward query unchanged
+    App->>MongoFlux: find({_id: "abc123"}) [no clickhouse param]
+    MongoFlux->>MongoDB Primary: forward query unchanged
     MongoDB Primary-->>App: results
 ```
 
@@ -144,7 +144,7 @@ Standalone avg: **26.5x** | Distributed avg: **12.3x** | Distributed wins on lar
 
 ### Writes (200K records)
 
-| Metric | MongoDB alone | With mg-clickhouse | Overhead |
+| Metric | MongoDB alone | With MongoFlux | Overhead |
 |:-------|:-------------|:-------------------|:---------|
 | Batch throughput | 28,639 docs/s | 31,858 docs/s | **0%** |
 | Single insert P99 | 8.25 ms | 8.08 ms | **0%** |
@@ -168,7 +168,7 @@ sync:
   mode: "oplog"            # or "changestream"
   batch_size: 1000
   flush_interval_ms: 500
-  resume_token_path: "/var/lib/mg-clickhouse/resume_tokens"
+  resume_token_path: "/var/lib/MongoFlux/resume_tokens"
 
 api:
   port: 9090
@@ -182,21 +182,21 @@ Validated at startup: required fields, port ranges (1-65535), batch_size (1-1M),
 
 ## 8. Deployment
 
-The default deployment uses a 3-node MongoDB replica set (`rs0`) with 1 primary and 2 secondaries. mg-clickhouse connects using the full replica set URI and automatically follows primary elections.
+The default deployment uses a 3-node MongoDB replica set (`rs0`) with 1 primary and 2 secondaries. MongoFlux connects using the full replica set URI and automatically follows primary elections.
 
 ```mermaid
 flowchart LR
     APP[Apps] --> MGP[(MongoDB Primary)]
     MGP --- MGS1[(Secondary 1)]
     MGP --- MGS2[(Secondary 2)]
-    MGP -->|oplog| MGC[mg-clickhouse]
+    MGP -->|oplog| MGC[MongoFlux]
     MGC -->|INSERT| LB[CH Load Balancer]
     LB --> S1[Shard 1]
     LB --> S2[Shard 2]
     LB --> S3[Shard 3]
 ```
 
-- Docker: non-root `mgch`, `tini` PID 1, graceful shutdown
+- Docker: non-root `mongoflux`, `tini` PID 1, graceful shutdown
 - Docker Compose: 3 MongoDB nodes (`mongo-primary`, `mongo-secondary1`, `mongo-secondary2`) with automatic `rs.initiate()`
 - K8s: `/health` (liveness), `/ready` (readiness, checks CH)
 - Security: RAII CURL, URL-encoded credentials, no built-in API auth (use gateway)
@@ -205,10 +205,10 @@ flowchart LR
 
 | Failure | Recovery | Data Loss |
 |:--------|:---------|:----------|
-| mg-clickhouse crash | Resume from saved position | None |
+| MongoFlux crash | Resume from saved position | None |
 | ClickHouse down | Retry on next flush | None |
 | MongoDB primary failover | Driver auto-discovers new primary via replica set URI (3s backoff) | None |
-| MongoDB secondary down | No impact — mg-clickhouse tails primary only | None |
+| MongoDB secondary down | No impact — MongoFlux tails primary only | None |
 | Corrupted token | Start from oplog tail | Possible gap |
 
 ## 10. Roadmap
@@ -225,7 +225,7 @@ flowchart LR
 ## 11. File Structure
 
 ```
-include/mg_clickhouse/
+include/mongoflux/
   config.h, schema_mapping.h, expr_tree.h, query_translator.h,
   clickhouse_client.h, oplog_sync.h, change_stream_sync.h,
   mongo_proxy.h, management_api.h, routing.h, bson_utils.h

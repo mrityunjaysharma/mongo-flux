@@ -1,6 +1,6 @@
 # How We Made MongoDB 40x Faster for Analytics — Without Changing a Single Line of Application Code
 
-![mg-clickhouse: Real-time MongoDB to ClickHouse bridge](https://images.unsplash.com/photo-1558494949-ef010cbdcc31?w=1200&h=400&fit=crop&q=80)
+![MongoFlux: Real-time MongoDB to ClickHouse bridge](https://images.unsplash.com/photo-1558494949-ef010cbdcc31?w=1200&h=400&fit=crop&q=80)
 *Photo: Data flowing through infrastructure — representing real-time CDC replication*
 
 ---
@@ -18,7 +18,7 @@ Here's why: MongoDB stores data row-by-row (document-oriented). When you ask "wh
 | Compression | ~2x | ~10-20x |
 | GROUP BY 500K rows | 300-1500 ms | 8-30 ms |
 
-We built **mg-clickhouse** to solve this without ETL, without data staleness, and without touching application code.
+We built **MongoFlux** to solve this without ETL, without data staleness, and without touching application code.
 
 ---
 
@@ -26,23 +26,23 @@ We built **mg-clickhouse** to solve this without ETL, without data staleness, an
 
 MongoDB replica sets work by having secondary nodes tail the primary's oplog (`local.oplog.rs`) — a capped collection that records every write. Secondaries apply each operation to stay in sync.
 
-mg-clickhouse does exactly the same thing. It opens a tailable-await cursor on the oplog and applies operations to ClickHouse instead of a local MongoDB storage engine. From MongoDB's perspective, it's just another consumer of the write stream.
+MongoFlux does exactly the same thing. It opens a tailable-await cursor on the oplog and applies operations to ClickHouse instead of a local MongoDB storage engine. From MongoDB's perspective, it's just another consumer of the write stream.
 
-The default deployment runs a 3-node MongoDB replica set: 1 primary and 2 secondaries. For reads, the application connects to mg-clickhouse which acts as a routing proxy. mg-clickhouse inspects the connection URI — if `?clickhouse=true` is present, it translates the query to SQL and executes on ClickHouse. If the parameter is absent or false, it forwards the query to MongoDB Primary unchanged.
+The default deployment runs a 3-node MongoDB replica set: 1 primary and 2 secondaries. For reads, the application connects to MongoFlux which acts as a routing proxy. MongoFlux inspects the connection URI — if `?clickhouse=true` is present, it translates the query to SQL and executes on ClickHouse. If the parameter is absent or false, it forwards the query to MongoDB Primary unchanged.
 
 ```mermaid
 flowchart TD
     APP[Your Application] -->|writes + OLTP reads| MGP[(MongoDB Primary)]
     MGP -->|replication| MGS1[(Secondary 1)]
     MGP -->|replication| MGS2[(Secondary 2)]
-    APP -->|"all reads (find/aggregate)"| MGC[mg-clickhouse]
+    APP -->|"all reads (find/aggregate)"| MGC[MongoFlux]
     MGC -->|"?clickhouse=true → SQL"| CH[(ClickHouse)]
     MGC -->|"no flag → forward"| MGP
     MGP -->|"oplog (async)"| MGC
     MGC -->|batch INSERT| CH
 ```
 
-The key insight: writes go to the MongoDB primary unchanged (zero overhead), the two secondaries provide high availability, and mg-clickhouse transparently routes reads — analytics to ClickHouse, everything else to MongoDB.
+The key insight: writes go to the MongoDB primary unchanged (zero overhead), the two secondaries provide high availability, and MongoFlux transparently routes reads — analytics to ClickHouse, everything else to MongoDB.
 
 ---
 
@@ -50,7 +50,7 @@ The key insight: writes go to the MongoDB primary unchanged (zero overhead), the
 
 ### 1. Real-Time Replication (Oplog Tailing)
 
-mg-clickhouse tails the oplog from the MongoDB primary. The two secondaries handle read scaling and failover independently — they don't participate in the replication pipeline to ClickHouse.
+MongoFlux tails the oplog from the MongoDB primary. The two secondaries handle read scaling and failover independently — they don't participate in the replication pipeline to ClickHouse.
 
 ```mermaid
 sequenceDiagram
@@ -58,7 +58,7 @@ sequenceDiagram
     participant Primary as MongoDB Primary
     participant S1 as Secondary 1
     participant S2 as Secondary 2
-    participant mgch as mg-clickhouse
+    participant mf as MongoFlux
     participant CH as ClickHouse
 
     App->>Primary: insertOne({amount: 99.99})
@@ -67,18 +67,18 @@ sequenceDiagram
     Primary->>S2: replication (async)
     Note over App: Write done. Zero overhead.
 
-    Primary->>mgch: oplog entry (async)
-    mgch->>mgch: extract mapped fields
-    mgch->>mgch: add to batch buffer
-    mgch->>CH: INSERT batch (every 500ms or 1000 rows)
-    mgch->>mgch: persist oplog position
+    Primary->>mf: oplog entry (async)
+    mf->>mf: extract mapped fields
+    mf->>mf: add to batch buffer
+    mf->>CH: INSERT batch (every 500ms or 1000 rows)
+    mf->>mf: persist oplog position
 ```
 
-The replication is fully async and decoupled from the write path. The primary acknowledges writes to your application before mg-clickhouse even sees them. If the primary fails, the replica set elects a new primary and mg-clickhouse automatically reconnects to continue tailing. Our benchmarks confirm zero measurable write overhead.
+The replication is fully async and decoupled from the write path. The primary acknowledges writes to your application before MongoFlux even sees them. If the primary fails, the replica set elects a new primary and MongoFlux automatically reconnects to continue tailing. Our benchmarks confirm zero measurable write overhead.
 
 ### 2. Query Translation (BSON → AST → SQL)
 
-When your application sends a MongoDB aggregation pipeline, mg-clickhouse translates it to ClickHouse SQL through a two-phase expression tree:
+When your application sends a MongoDB aggregation pipeline, MongoFlux translates it to ClickHouse SQL through a two-phase expression tree:
 
 ```mermaid
 flowchart LR
@@ -141,7 +141,7 @@ xychart-beta
 
 ### Write Overhead: Zero
 
-| Metric | MongoDB alone | With mg-clickhouse | Overhead |
+| Metric | MongoDB alone | With MongoFlux | Overhead |
 |:-------|:-------------|:-------------------|:---------|
 | Batch insert throughput | 28,639 docs/s | 31,858 docs/s | 0% |
 | Single insert P99 | 8.25 ms | 8.08 ms | 0% |
@@ -161,29 +161,29 @@ stateDiagram-v2
     Tailing --> [*]: SIGTERM → flush + save + exit
 ```
 
-The critical design decision: **oplog position is saved only AFTER a successful flush to ClickHouse**. If mg-clickhouse crashes between flush and save, the same entries replay on restart. `ReplacingMergeTree` deduplicates the replays automatically.
+The critical design decision: **oplog position is saved only AFTER a successful flush to ClickHouse**. If MongoFlux crashes between flush and save, the same entries replay on restart. `ReplacingMergeTree` deduplicates the replays automatically.
 
 ---
 
 ## Standalone vs Distributed ClickHouse
 
-mg-clickhouse supports both single-node and multi-shard deployments:
+MongoFlux supports both single-node and multi-shard deployments:
 
 ```mermaid
 flowchart LR
     subgraph Standalone
-        A[mg-clickhouse] --> B[Single Node<br/>MergeTree]
+        A[MongoFlux] --> B[Single Node<br/>MergeTree]
     end
 
     subgraph Distributed
-        C[mg-clickhouse] --> D[Distributed Table]
+        C[MongoFlux] --> D[Distributed Table]
         D --> E[Shard 1]
         D --> F[Shard 2]
         D --> G[Shard 3]
     end
 ```
 
-For clustered deployments, mg-clickhouse auto-generates both the local MergeTree table and the Distributed routing table. Inserts go to the Distributed table which handles shard routing transparently.
+For clustered deployments, MongoFlux auto-generates both the local MergeTree table and the Distributed routing table. Inserts go to the Distributed table which handles shard routing transparently.
 
 **When to use which:**
 - **Standalone**: Data fits on one node (<500GB). Simpler, faster for small-medium datasets.
@@ -207,12 +207,12 @@ Beyond the core sync and query translation:
 ## Getting Started (5 Minutes)
 
 ```bash
-git clone https://github.com/your-org/mg-clickhouse
-cd mg-clickhouse
+git clone https://github.com/your-org/MongoFlux
+cd MongoFlux
 docker compose up --build
 ```
 
-This starts a 3-node MongoDB replica set (1 primary + 2 secondaries on ports 27017-27019), ClickHouse, and mg-clickhouse. The replica set initializes automatically via `rs.initiate()`. Create a mapping, insert data into MongoDB, and query it from ClickHouse — all within 5 minutes.
+This starts a 3-node MongoDB replica set (1 primary + 2 secondaries on ports 27017-27019), ClickHouse, and MongoFlux. The replica set initializes automatically via `rs.initiate()`. Create a mapping, insert data into MongoDB, and query it from ClickHouse — all within 5 minutes.
 
 ---
 
@@ -225,7 +225,7 @@ This starts a 3-node MongoDB replica set (1 primary + 2 secondaries on ports 270
 - You're building observability/logging on MongoDB but need ClickHouse query speed
 
 **Not a fit:**
-- You need sub-millisecond replication (mg-clickhouse batches at 500ms intervals)
+- You need sub-millisecond replication (MongoFlux batches at 500ms intervals)
 - Your queries are simple point lookups (MongoDB is already fast for these)
 - You need real-time delete propagation with strong consistency
 
@@ -247,7 +247,7 @@ flowchart TD
         MGP --- MGS2
     end
 
-    subgraph "mg-clickhouse"
+    subgraph "MongoFlux"
         SYNC[Oplog Sync Engine]
         XLAT[Query Translator<br/>40+ expressions]
         ROUTE[Query Router]
@@ -275,10 +275,10 @@ flowchart TD
 
 ## Links
 
-- **GitHub**: [mg-clickhouse](https://github.com/your-org/mg-clickhouse)
+- **GitHub**: [MongoFlux](https://github.com/your-org/MongoFlux)
 - **Design Document**: [docs/design.md](docs/design.md)
 - **Benchmark Results**: [benchmark/aggregation_results.json](benchmark/aggregation_results.json)
 
 ---
 
-*mg-clickhouse is Apache-2.0 licensed. Built with C++17, mongocxx, libcurl, and cpp-httplib.*
+*MongoFlux is Apache-2.0 licensed. Built with C++17, mongocxx, libcurl, and cpp-httplib.*

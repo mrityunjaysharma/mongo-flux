@@ -37,7 +37,7 @@ RUN wget -q https://github.com/mongodb/mongo-cxx-driver/releases/download/r3.9.0
         -DCMAKE_PREFIX_PATH=/usr/local \
     && make -j$(nproc) && make install
 
-# Build mg-clickhouse
+# Build MongoFlux
 WORKDIR /build
 COPY . .
 
@@ -58,23 +58,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Non-root user for security
-RUN groupadd -r mgch && useradd -r -g mgch -d /var/lib/mg-clickhouse -s /sbin/nologin mgch
+RUN groupadd -r mongoflux && useradd -r -g mongoflux -d /var/lib/mongoflux -s /sbin/nologin mongoflux
 
 COPY --from=builder /usr/local/lib/ /usr/local/lib/
-COPY --from=builder /build/build/mg_clickhouse /usr/local/bin/mg_clickhouse
-COPY config/mg-clickhouse.yaml /etc/mg-clickhouse/mg-clickhouse.yaml
+COPY --from=builder /build/build/mongoflux /usr/local/bin/mongoflux
+COPY config/mongoflux.yaml /etc/mongoflux/mongoflux.yaml
 
 RUN ldconfig \
-    && mkdir -p /var/lib/mg-clickhouse/resume_tokens \
-    && mkdir -p /var/log/mg-clickhouse \
-    && chown -R mgch:mgch /var/lib/mg-clickhouse /var/log/mg-clickhouse
+    && mkdir -p /var/lib/mongoflux/resume_tokens \
+    && mkdir -p /var/log/mongoflux \
+    && chown -R mongoflux:mongoflux /var/lib/mongoflux /var/log/mongoflux
 
-USER mgch
+USER mongoflux
 EXPOSE 9090
 
 # tini ensures proper signal forwarding for graceful shutdown
-ENTRYPOINT ["tini", "--", "/usr/local/bin/mg_clickhouse"]
-CMD ["/etc/mg-clickhouse/mg-clickhouse.yaml"]
+ENTRYPOINT ["tini", "--", "/usr/local/bin/mongoflux"]
+CMD ["/etc/mongoflux/mongoflux.yaml"]
 
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
     CMD curl -sf http://localhost:9090/api/v1/status || exit 1

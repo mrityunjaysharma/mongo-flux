@@ -1,4 +1,4 @@
-# mg-clickhouse configuration for Docker Compose
+# MongoFlux configuration for Docker Compose
 # MongoDB: 3-node replica set (1 primary + 2 secondaries)
 # ClickHouse: single node
 
@@ -17,7 +17,7 @@ sync:
   mode: "oplog"
   batch_size: 1000
   flush_interval_ms: 500
-  resume_token_path: "/var/lib/mg-clickhouse/resume_tokens"
+  resume_token_path: "/var/lib/mongoflux/resume_tokens"
   max_pending_rows: 100000
   propagate_deletes: false
 

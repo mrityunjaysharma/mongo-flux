@@ -55,7 +55,7 @@
 
 <h1>How We Made MongoDB 40x Faster for Analytics — Without Changing a Single Line of Application Code</h1>
 
-<p class="subtitle">A deep dive into mg-clickhouse: real-time MongoDB to ClickHouse replication with transparent query routing</p>
+<p class="subtitle">A deep dive into MongoFlux: real-time MongoDB to ClickHouse replication with transparent query routing</p>
 
 <p>
     <span class="tag">MongoDB</span>
@@ -83,22 +83,22 @@
 
 <p>The traditional fix is ETL: batch jobs that copy data to a warehouse every hour. But ETL means stale data, pipeline maintenance, and schema drift headaches.</p>
 
-<p>We built <strong>mg-clickhouse</strong> to eliminate ETL entirely.</p>
+<p>We built <strong>MongoFlux</strong> to eliminate ETL entirely.</p>
 
 <hr class="separator">
 
 <h2>The Solution: ClickHouse as a "Virtual Secondary"</h2>
 
-<p>MongoDB replica sets work by having secondary nodes tail the primary's oplog — a capped collection recording every write. mg-clickhouse does exactly the same thing, but applies operations to ClickHouse instead of a local storage engine.</p>
+<p>MongoDB replica sets work by having secondary nodes tail the primary's oplog — a capped collection recording every write. MongoFlux does exactly the same thing, but applies operations to ClickHouse instead of a local storage engine.</p>
 
-<p>The default deployment runs a 3-node MongoDB replica set: 1 primary and 2 secondaries. For reads, the application connects to mg-clickhouse which acts as a routing proxy — if <code>?clickhouse=true</code> is in the URI, the query goes to ClickHouse. Otherwise, it's forwarded to MongoDB Primary unchanged.</p>
+<p>The default deployment runs a 3-node MongoDB replica set: 1 primary and 2 secondaries. For reads, the application connects to MongoFlux which acts as a routing proxy — if <code>?clickhouse=true</code> is in the URI, the query goes to ClickHouse. Otherwise, it's forwarded to MongoDB Primary unchanged.</p>
 
 <div class="mermaid">
 flowchart TD
     APP[Your Application] -->|writes| MGP[(MongoDB Primary)]
     MGP -->|replication| MGS1[(Secondary 1)]
     MGP -->|replication| MGS2[(Secondary 2)]
-    APP -->|"all reads"| MGC[mg-clickhouse]
+    APP -->|"all reads"| MGC[MongoFlux]
     MGC -->|"?clickhouse=true → SQL"| CH[(ClickHouse)]
     MGC -->|"no flag → forward"| MGP
     MGP -->|"oplog (async)"| MGC
@@ -106,7 +106,7 @@ flowchart TD
 </div>
 
 <div class="highlight">
-    <strong>Key insight:</strong> Writes go to the MongoDB primary unchanged (zero overhead). The two secondaries provide HA. mg-clickhouse routes reads — analytics queries to ClickHouse, everything else forwarded to MongoDB. Add <code>?clickhouse=true</code> to your connection URI. No application code changes.
+    <strong>Key insight:</strong> Writes go to the MongoDB primary unchanged (zero overhead). The two secondaries provide HA. MongoFlux routes reads — analytics queries to ClickHouse, everything else forwarded to MongoDB. Add <code>?clickhouse=true</code> to your connection URI. No application code changes.
 </div>
 
 <hr class="separator">
@@ -115,7 +115,7 @@ flowchart TD
 
 <h3>1. Real-Time Replication</h3>
 
-<p>mg-clickhouse tails the oplog from the MongoDB primary. The two secondaries handle read scaling and failover independently.</p>
+<p>MongoFlux tails the oplog from the MongoDB primary. The two secondaries handle read scaling and failover independently.</p>
 
 <div class="mermaid">
 sequenceDiagram
@@ -123,7 +123,7 @@ sequenceDiagram
     participant Primary as MongoDB Primary
     participant S1 as Secondary 1
     participant S2 as Secondary 2
-    participant mgch as mg-clickhouse
+    participant mf as MongoFlux
     participant CH as ClickHouse
 
     App->>Primary: insertOne({amount: 99.99})
@@ -131,13 +131,13 @@ sequenceDiagram
     Primary->>S1: replication (async)
     Primary->>S2: replication (async)
     Note over App: Write done. Zero overhead.
-    Primary->>mgch: oplog entry (async)
-    mgch->>mgch: extract fields → batch
-    mgch->>CH: INSERT batch
-    mgch->>mgch: save position
+    Primary->>mf: oplog entry (async)
+    mf->>mf: extract fields → batch
+    mf->>CH: INSERT batch
+    mf->>mf: save position
 </div>
 
-<p>The replication is fully async. The primary acknowledges writes before mg-clickhouse sees them. If the primary fails, the replica set elects a new primary and mg-clickhouse automatically reconnects. Benchmarks confirm zero measurable write overhead.</p>
+<p>The replication is fully async. The primary acknowledges writes before MongoFlux sees them. If the primary fails, the replica set elects a new primary and MongoFlux automatically reconnects. Benchmarks confirm zero measurable write overhead.</p>
 
 <h3>2. Query Translation (BSON → AST → SQL)</h3>
 
@@ -208,17 +208,17 @@ xychart-beta
 <div class="mermaid">
 flowchart LR
     subgraph "Standalone (< 500GB)"
-        A[mg-clickhouse] --> B[Single Node]
+        A[MongoFlux] --> B[Single Node]
     end
     subgraph "Distributed (petabyte-scale)"
-        C[mg-clickhouse] --> D[Distributed Table]
+        C[MongoFlux] --> D[Distributed Table]
         D --> E[Shard 1]
         D --> F[Shard 2]
         D --> G[Shard 3]
     end
 </div>
 
-<p>mg-clickhouse auto-generates the correct DDL for both modes. For clustered deployments, it creates a local MergeTree table on each shard plus a Distributed routing table — all from a single mapping configuration.</p>
+<p>MongoFlux auto-generates the correct DDL for both modes. For clustered deployments, it creates a local MergeTree table on each shard plus a Distributed routing table — all from a single mapping configuration.</p>
 
 <table>
     <tr><th>Mode</th><th>When to use</th><th>Avg speedup vs MongoDB</th></tr>
@@ -262,11 +262,11 @@ flowchart TD
 
 <h2>Getting Started</h2>
 
-<pre><code>git clone https://github.com/your-org/mg-clickhouse
-cd mg-clickhouse
+<pre><code>git clone https://github.com/your-org/MongoFlux
+cd MongoFlux
 docker compose up --build</code></pre>
 
-<p>This starts a 3-node MongoDB replica set (1 primary + 2 secondaries on ports 27017-27019), ClickHouse, and mg-clickhouse. The replica set initializes automatically via <code>rs.initiate()</code>.</p>
+<p>This starts a 3-node MongoDB replica set (1 primary + 2 secondaries on ports 27017-27019), ClickHouse, and MongoFlux. The replica set initializes automatically via <code>rs.initiate()</code>.</p>
 
 <pre><code># Create a mapping
 curl -X POST http://localhost:9090/api/v1/mappings -H "Content-Type: application/json" -d '{
@@ -298,7 +298,7 @@ curl -X POST http://localhost:9090/api/v1/mappings/orders/sync</code></pre>
 <hr class="separator">
 
 <blockquote>
-    mg-clickhouse is Apache-2.0 licensed. Built with C++17, mongocxx 3.9, libcurl, cpp-httplib, and nlohmann/json.
+    MongoFlux is Apache-2.0 licensed. Built with C++17, mongocxx 3.9, libcurl, cpp-httplib, and nlohmann/json.
 </blockquote>
 
 <p style="text-align: center; color: #6b7280; margin-top: 3rem; font-family: -apple-system, sans-serif; font-size: 0.85rem;">
