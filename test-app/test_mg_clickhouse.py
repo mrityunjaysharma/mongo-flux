@@ -168,8 +168,14 @@ def setup() -> None:
     result = api_call("POST", f"/api/v1/mappings/{MONGO_COLLECTION}/sync")
     logger.info(f"  Table: {result.get('status', 'unknown')}")
 
-    api_call("POST", "/api/v1/sync/restart")
-    time.sleep(2)
+    # Restart sync — may briefly disconnect, so retry
+    for attempt in range(3):
+        try:
+            api_call("POST", "/api/v1/sync/restart")
+            break
+        except (requests.ConnectionError, RuntimeError):
+            time.sleep(2)
+    time.sleep(4)
     logger.info("  Sync restarted")
 
 
