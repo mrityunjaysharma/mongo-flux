@@ -1,80 +1,31 @@
-FROM ubuntu:22.04 AS builder
+FROM golang:1.22-alpine AS builder
 
-ENV DEBIAN_FRONTEND=noninteractive
+RUN apk add --no-cache git ca-certificates
 
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    cmake \
-    git \
-    pkg-config \
-    libcurl4-openssl-dev \
-    libssl-dev \
-    libyaml-cpp-dev \
-    libsasl2-dev \
-    python3 \
-    wget \
-    && rm -rf /var/lib/apt/lists/*
-
-# Build mongo-c-driver (libmongoc + libbson)
-WORKDIR /deps
-RUN wget -q https://github.com/mongodb/mongo-c-driver/releases/download/1.28.0/mongo-c-driver-1.28.0.tar.gz \
-    && tar xzf mongo-c-driver-1.28.0.tar.gz \
-    && cd mongo-c-driver-1.28.0 \
-    && mkdir -p cmake_build && cd cmake_build \
-    && cmake .. -DCMAKE_BUILD_TYPE=Release \
-        -DENABLE_AUTOMATIC_INIT_AND_CLEANUP=OFF \
-        -DCMAKE_INSTALL_PREFIX=/usr/local \
-    && make -j$(nproc) && make install
-
-# Build mongo-cxx-driver (mongocxx + bsoncxx)
-RUN wget -q https://github.com/mongodb/mongo-cxx-driver/releases/download/r3.9.0/mongo-cxx-driver-r3.9.0.tar.gz \
-    && tar xzf mongo-cxx-driver-r3.9.0.tar.gz \
-    && cd mongo-cxx-driver-r3.9.0 \
-    && mkdir -p cmake_build && cd cmake_build \
-    && cmake .. -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_CXX_STANDARD=17 \
-        -DCMAKE_INSTALL_PREFIX=/usr/local \
-        -DCMAKE_PREFIX_PATH=/usr/local \
-    && make -j$(nproc) && make install
-
-# Build MongoFlux
 WORKDIR /build
-COPY . .
+COPY go.mod go.sum ./
+RUN go mod download
 
-RUN mkdir -p build && cd build && \
-    cmake .. -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_PREFIX_PATH=/usr/local && \
-    make -j$(nproc)
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o mongoflux ./cmd/mongoflux
 
 # --- Production runtime image ---
-FROM ubuntu:22.04
+FROM alpine:3.19
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libcurl4 \
-    libssl3 \
-    libyaml-cpp0.7 \
-    libsasl2-2 \
-    tini \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache ca-certificates tini curl \
+    && addgroup -S mongoflux && adduser -S mongoflux -G mongoflux
 
-# Non-root user for security
-RUN groupadd -r mongoflux && useradd -r -g mongoflux -d /var/lib/mongoflux -s /sbin/nologin mongoflux
-
-COPY --from=builder /usr/local/lib/ /usr/local/lib/
-COPY --from=builder /build/build/mongoflux /usr/local/bin/mongoflux
+COPY --from=builder /build/mongoflux /usr/local/bin/mongoflux
 COPY config/mongoflux.yaml /etc/mongoflux/mongoflux.yaml
 
-RUN ldconfig \
-    && mkdir -p /var/lib/mongoflux/resume_tokens \
-    && mkdir -p /var/log/mongoflux \
-    && chown -R mongoflux:mongoflux /var/lib/mongoflux /var/log/mongoflux
+RUN mkdir -p /var/lib/mongoflux/resume_tokens \
+    && chown -R mongoflux:mongoflux /var/lib/mongoflux
 
 USER mongoflux
 EXPOSE 9090
 
-# tini ensures proper signal forwarding for graceful shutdown
 ENTRYPOINT ["tini", "--", "/usr/local/bin/mongoflux"]
 CMD ["/etc/mongoflux/mongoflux.yaml"]
 
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
-    CMD curl -sf http://localhost:9090/api/v1/status || exit 1
+    CMD curl -sf http://localhost:9090/health || exit 1
