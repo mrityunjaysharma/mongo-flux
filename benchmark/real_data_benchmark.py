@@ -2,15 +2,15 @@
 """
 Real Data Benchmark: MongoDB vs ClickHouse
 
-Connects to an existing MongoDB collection (no inserts), auto-discovers the schema,
+Connects to an existing MongoDB collection, auto-discovers the schema,
 loads data into local ClickHouse, and benchmarks analytical queries on both.
 
 Usage:
-    export MONGO_URI="mongodb://user:pass@host1:27017,host2:27017,host3:27017/dbname?authSource=admin&readPreference=primary"
+    export MONGO_URI="mongodb://user:pass@host:27017/db?authSource=admin"
     export MONGO_DB="mydb"
     export MONGO_COLLECTION="myCollection"
 
-    python3 benchmark/real_data_benchmark.py --limit 5000000 --iterations 3
+    python3 benchmark/real_data_benchmark.py --limit 500000 --iterations 3
 
 Environment Variables:
     MONGO_URI          - Full MongoDB connection URI (required)
@@ -22,24 +22,40 @@ Environment Variables:
 
 import argparse
 import json
+import logging
 import os
-import random
 import time
 import statistics
 import sys
 from datetime import datetime
-from bson import ObjectId
+from typing import Any, Dict, List, Optional, Tuple
+
+try:
+    from bson import ObjectId
+except ImportError:
+    sys.exit("ERROR: pymongo not installed. Run: pip install pymongo")
 
 try:
     import pymongo
 except ImportError:
-    sys.exit("pymongo not installed. Run: pip install pymongo")
+    sys.exit("ERROR: pymongo not installed. Run: pip install pymongo")
 
 try:
     import requests
+    from requests.adapters import HTTPAdapter
 except ImportError:
-    sys.exit("requests not installed. Run: pip install requests")
+    sys.exit("ERROR: requests not installed. Run: pip install requests")
 
+# ============================================================
+# Logging
+# ============================================================
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%H:%M:%S",
+)
+logger = logging.getLogger(__name__)
 
 # ============================================================
 # Configuration from environment
@@ -51,11 +67,17 @@ MONGO_COLLECTION = os.environ.get("MONGO_COLLECTION", "")
 CH_URL = os.environ.get("CH_URL", "http://localhost:8123")
 CH_DB = os.environ.get("CH_DB", "real_benchmark")
 
+# HTTP session with connection pooling
+SESSION = requests.Session()
+SESSION.mount("http://", HTTPAdapter(pool_connections=5, pool_maxsize=5))
+REQUEST_TIMEOUT = 30
 
-def ch_query(sql):
-    resp = requests.post(CH_URL, data=sql)
+
+def ch_query(sql: str) -> str:
+    """Execute a ClickHouse query. Raises RuntimeError on failure."""
+    resp = SESSION.post(CH_URL, data=sql, timeout=REQUEST_TIMEOUT)
     if resp.status_code != 200:
-        raise RuntimeError(f"ClickHouse error: {resp.text.strip()[:300]}")
+        raise RuntimeError(f"ClickHouse error ({resp.status_code}): {resp.text.strip()[:300]}")
     return resp.text
 
 
@@ -205,158 +227,187 @@ def _flush_batch(table_name, batch):
 # ============================================================
 
 def generate_queries(schema, ch_fields, table_name, sample_doc):
-    """Generate 20 complex aggregation queries for APM alerts benchmarking."""
+    """Generate up to 20 analytical queries dynamically from discovered schema."""
     queries = []
 
-    # Field name mapping helper
-    def get_cf(mongo_field):
-        """Get ClickHouse column name for a mongo field."""
+    # Classify fields by type for query generation
+    all_fields = [(mf, cn) for mf, cn, ct in ch_fields if mf != "_id"]
+    string_fields = [(mf, cn) for mf, cn, ct in ch_fields
+                     if mf != "_id" and "String" in ct]
+    numeric_fields = [(mf, cn) for mf, cn, ct in ch_fields
+                      if any(t in ct for t in ("Int", "Float", "UInt"))]
+    date_fields = [(mf, cn) for mf, cn, ct in ch_fields
+                   if any(t in ct for t in ("Date", "DateTime"))]
+
+    # If all fields are Nullable(String), use heuristics to classify
+    if not numeric_fields:
+        numeric_fields = [(mf, cn) for mf, cn, ct in ch_fields
+                          if mf in ("value", "count", "amount", "score", "total", "size")]
+    if not date_fields:
+        date_fields = [(mf, cn) for mf, cn, ct in ch_fields
+                       if any(kw in mf.lower() for kw in ("date", "time", "at", "created", "updated"))]
+
+    # Pick good GROUP BY candidates (low-cardinality string fields)
+    low_card_keywords = ["status", "type", "category", "region", "segment", "level",
+                         "priority", "source", "mode", "role", "env", "tier", "kind"]
+    group_fields = []
+    for mf, cn in string_fields:
+        if any(kw in mf.lower() for kw in low_card_keywords):
+            group_fields.append((mf, cn))
+    # Fill with remaining string fields
+    for mf, cn in string_fields:
+        if len(group_fields) >= 10:
+            break
+        if (mf, cn) not in group_fields:
+            group_fields.append((mf, cn))
+
+    # Helper to get CH column name
+    def col(mongo_field):
         for mf, cn, ct in ch_fields:
             if mf == mongo_field:
                 return cn
         return mongo_field
 
-    # 1. Total alert count
+    # 1. Full count
     queries.append({
-        "name": "1. Total alert count",
+        "name": "1. Total document count",
         "mongo": [{"$count": "total"}],
         "ch": f"SELECT count() as total FROM {CH_DB}.{table_name}",
     })
 
-    # 2. Alerts by status
-    queries.append({
-        "name": "2. Count by status",
-        "mongo": [{"$group": {"_id": "$status", "count": {"$sum": 1}}}, {"$sort": {"count": -1}}],
-        "ch": f"SELECT `{get_cf('status')}`, count() as cnt FROM {CH_DB}.{table_name} GROUP BY `{get_cf('status')}` ORDER BY cnt DESC",
-    })
+    # 2-5. GROUP BY on discovered fields
+    for i, (mf, cf) in enumerate(group_fields[:4]):
+        queries.append({
+            "name": f"{len(queries)+1}. Count by {mf}",
+            "mongo": [{"$group": {"_id": f"${mf}", "count": {"$sum": 1}}}, {"$sort": {"count": -1}}],
+            "ch": f"SELECT `{cf}`, count() as cnt FROM {CH_DB}.{table_name} GROUP BY `{cf}` ORDER BY cnt DESC",
+        })
 
-    # 3. Alerts by category × type (2D GROUP BY)
-    queries.append({
-        "name": "3. Alerts by category × type",
-        "mongo": [{"$group": {"_id": {"cat": "$alertCategory", "type": "$alertType"}, "count": {"$sum": 1}}}, {"$sort": {"count": -1}}],
-        "ch": f"SELECT `{get_cf('alertCategory')}`, `{get_cf('alertType')}`, count() as cnt FROM {CH_DB}.{table_name} GROUP BY `{get_cf('alertCategory')}`, `{get_cf('alertType')}` ORDER BY cnt DESC",
-    })
+    # 6. 2D GROUP BY
+    if len(group_fields) >= 2:
+        mf1, cf1 = group_fields[0]
+        mf2, cf2 = group_fields[1]
+        queries.append({
+            "name": f"{len(queries)+1}. 2D GROUP BY ({mf1} × {mf2})",
+            "mongo": [{"$group": {"_id": {"a": f"${mf1}", "b": f"${mf2}"}, "count": {"$sum": 1}}}, {"$sort": {"count": -1}}],
+            "ch": f"SELECT `{cf1}`, `{cf2}`, count() as cnt FROM {CH_DB}.{table_name} GROUP BY `{cf1}`, `{cf2}` ORDER BY cnt DESC",
+        })
 
-    # 4. Top 20 customers by alert volume
-    queries.append({
-        "name": "4. Top 20 customers by alert count",
-        "mongo": [{"$group": {"_id": "$customerName", "count": {"$sum": 1}}}, {"$sort": {"count": -1}}, {"$limit": 20}],
-        "ch": f"SELECT `{get_cf('customerName')}`, count() as cnt FROM {CH_DB}.{table_name} GROUP BY `{get_cf('customerName')}` ORDER BY cnt DESC LIMIT 20",
-    })
+    # 7. 3D GROUP BY
+    if len(group_fields) >= 3:
+        mf1, cf1 = group_fields[0]
+        mf2, cf2 = group_fields[1]
+        mf3, cf3 = group_fields[2]
+        queries.append({
+            "name": f"{len(queries)+1}. 3D GROUP BY ({mf1} × {mf2} × {mf3})",
+            "mongo": [{"$group": {"_id": {"a": f"${mf1}", "b": f"${mf2}", "c": f"${mf3}"}, "count": {"$sum": 1}}}, {"$sort": {"count": -1}}],
+            "ch": f"SELECT `{cf1}`, `{cf2}`, `{cf3}`, count() as cnt FROM {CH_DB}.{table_name} GROUP BY `{cf1}`, `{cf2}`, `{cf3}` ORDER BY cnt DESC",
+        })
 
-    # 5. Alerts by product × region × status (3D GROUP BY)
-    queries.append({
-        "name": "5. Alerts by product × region × status",
-        "mongo": [{"$group": {"_id": {"product": "$product", "region": "$apmRegion", "status": "$status"}, "count": {"$sum": 1}}}, {"$sort": {"count": -1}}],
-        "ch": f"SELECT `{get_cf('product')}`, `{get_cf('apmRegion')}`, `{get_cf('status')}`, count() as cnt FROM {CH_DB}.{table_name} GROUP BY `{get_cf('product')}`, `{get_cf('apmRegion')}`, `{get_cf('status')}` ORDER BY cnt DESC",
-    })
+    # 8. Top N
+    if group_fields:
+        mf, cf = group_fields[0]
+        queries.append({
+            "name": f"{len(queries)+1}. Top 20 by {mf}",
+            "mongo": [{"$group": {"_id": f"${mf}", "count": {"$sum": 1}}}, {"$sort": {"count": -1}}, {"$limit": 20}],
+            "ch": f"SELECT `{cf}`, count() as cnt FROM {CH_DB}.{table_name} GROUP BY `{cf}` ORDER BY cnt DESC LIMIT 20",
+        })
 
-    # 6. Unique customers per segment
-    queries.append({
-        "name": "6. Unique customers per segment",
-        "mongo": [{"$group": {"_id": "$customerSegment", "unique_customers": {"$addToSet": "$customerName"}}}, {"$project": {"segment": "$_id", "count": {"$size": "$unique_customers"}}}],
-        "ch": f"SELECT `{get_cf('customerSegment')}`, uniqExact(`{get_cf('customerName')}`) as unique_customers FROM {CH_DB}.{table_name} GROUP BY `{get_cf('customerSegment')}`",
-    })
+    # 9. Unique count (cardinality)
+    if len(string_fields) >= 2:
+        mf_group, cf_group = group_fields[0]
+        mf_uniq, cf_uniq = string_fields[1] if string_fields[1] != group_fields[0] else string_fields[0]
+        queries.append({
+            "name": f"{len(queries)+1}. Unique {mf_uniq} per {mf_group}",
+            "mongo": [{"$group": {"_id": f"${mf_group}", "uniq": {"$addToSet": f"${mf_uniq}"}}}, {"$project": {"field": "$_id", "count": {"$size": "$uniq"}}}],
+            "ch": f"SELECT `{cf_group}`, uniqExact(`{cf_uniq}`) as uniq_count FROM {CH_DB}.{table_name} GROUP BY `{cf_group}`",
+        })
 
-    # 7. Avg alert value by product
-    queries.append({
-        "name": "7. Avg alert value by product",
-        "mongo": [{"$group": {"_id": "$product", "avg_val": {"$avg": "$value"}, "max_val": {"$max": "$value"}, "count": {"$sum": 1}}}, {"$sort": {"avg_val": -1}}],
-        "ch": f"SELECT `{get_cf('product')}`, avg(toFloat64OrZero(`{get_cf('value')}`)) as avg_val, max(toFloat64OrZero(`{get_cf('value')}`)) as max_val, count() as cnt FROM {CH_DB}.{table_name} GROUP BY `{get_cf('product')}` ORDER BY avg_val DESC",
-    })
+    # 10. Numeric aggregation
+    if numeric_fields:
+        mf_n, cf_n = numeric_fields[0]
+        queries.append({
+            "name": f"{len(queries)+1}. Stats on {mf_n} (avg/min/max)",
+            "mongo": [{"$group": {"_id": None, "avg": {"$avg": f"${mf_n}"}, "min": {"$min": f"${mf_n}"}, "max": {"$max": f"${mf_n}"}}}],
+            "ch": f"SELECT avg(toFloat64OrZero(`{cf_n}`)) as avg_val, min(toFloat64OrZero(`{cf_n}`)) as min_val, max(toFloat64OrZero(`{cf_n}`)) as max_val FROM {CH_DB}.{table_name}",
+        })
 
-    # 8. Alert trend by month
-    queries.append({
-        "name": "8. Alert trend by month (24 months)",
-        "mongo": [{"$group": {"_id": {"$dateToString": {"format": "%Y-%m", "date": "$createdAt"}}, "count": {"$sum": 1}}}, {"$sort": {"_id": -1}}, {"$limit": 24}],
-        "ch": f"SELECT substring(`{get_cf('createdAt')}`, 1, 7) as month, count() as cnt FROM {CH_DB}.{table_name} WHERE `{get_cf('createdAt')}` IS NOT NULL AND `{get_cf('createdAt')}` != '' GROUP BY month ORDER BY month DESC LIMIT 24",
-    })
+    # 11. Numeric by group
+    if numeric_fields and group_fields:
+        mf_n, cf_n = numeric_fields[0]
+        mf_g, cf_g = group_fields[0]
+        queries.append({
+            "name": f"{len(queries)+1}. Avg {mf_n} by {mf_g}",
+            "mongo": [{"$group": {"_id": f"${mf_g}", "avg_val": {"$avg": f"${mf_n}"}, "count": {"$sum": 1}}}, {"$sort": {"avg_val": -1}}],
+            "ch": f"SELECT `{cf_g}`, avg(toFloat64OrZero(`{cf_n}`)) as avg_val, count() as cnt FROM {CH_DB}.{table_name} GROUP BY `{cf_g}` ORDER BY avg_val DESC",
+        })
 
-    # 9. Open alerts by assignee
-    queries.append({
-        "name": "9. Open alerts by assignee (top 20)",
-        "mongo": [{"$match": {"status": {"$ne": "resolved"}}}, {"$group": {"_id": "$assignee", "count": {"$sum": 1}}}, {"$sort": {"count": -1}}, {"$limit": 20}],
-        "ch": f"SELECT `{get_cf('assignee')}`, count() as cnt FROM {CH_DB}.{table_name} WHERE `{get_cf('status')}` != 'resolved' GROUP BY `{get_cf('assignee')}` ORDER BY cnt DESC LIMIT 20",
-    })
+    # 12. Filter + aggregate
+    if group_fields and sample_doc:
+        mf, cf = group_fields[0]
+        sample_val = sample_doc.get(mf)
+        if sample_val and isinstance(sample_val, str):
+            escaped = sample_val.replace("'", "\\'")
+            queries.append({
+                "name": f"{len(queries)+1}. Filter {mf}='{sample_val[:15]}' + count",
+                "mongo": [{"$match": {mf: sample_val}}, {"$count": "total"}],
+                "ch": f"SELECT count() as total FROM {CH_DB}.{table_name} WHERE `{cf}` = '{escaped}'",
+            })
 
-    # 10. Resolution rate by product
-    queries.append({
-        "name": "10. Resolution rate by product",
-        "mongo": [{"$group": {"_id": "$product", "total": {"$sum": 1}, "resolved": {"$sum": {"$cond": [{"$eq": ["$status", "resolved"]}, 1, 0]}}}}, {"$project": {"product": "$_id", "total": 1, "resolved": 1, "rate": {"$divide": ["$resolved", "$total"]}}}],
-        "ch": f"SELECT `{get_cf('product')}`, count() as total, countIf(`{get_cf('status')}` = 'resolved') as resolved, resolved / total as rate FROM {CH_DB}.{table_name} GROUP BY `{get_cf('product')}` ORDER BY rate ASC",
-    })
+    # 13. Conditional count (resolution/completion rate)
+    if group_fields:
+        mf_g, cf_g = group_fields[0]
+        # Find a status-like field
+        status_field = None
+        for mf, cf in group_fields:
+            if "status" in mf.lower():
+                status_field = (mf, cf)
+                break
+        if status_field and status_field != (mf_g, cf_g):
+            mf_s, cf_s = status_field
+            # Get a sample value for the conditional
+            sample_status = sample_doc.get(mf_s, "")
+            if sample_status:
+                queries.append({
+                    "name": f"{len(queries)+1}. Rate of {mf_s}='{sample_status[:10]}' by {mf_g}",
+                    "mongo": [{"$group": {"_id": f"${mf_g}", "total": {"$sum": 1}, "matched": {"$sum": {"$cond": [{"$eq": [f"${mf_s}", sample_status]}, 1, 0]}}}}],
+                    "ch": f"SELECT `{cf_g}`, count() as total, countIf(`{cf_s}` = '{sample_status}') as matched, matched / total as rate FROM {CH_DB}.{table_name} GROUP BY `{cf_g}`",
+                })
 
-    # 11. Top 15 ATS by alert count + unique customers
-    queries.append({
-        "name": "11. Top 15 ATS by alerts + customers",
-        "mongo": [{"$group": {"_id": "$ats", "count": {"$sum": 1}, "customers": {"$addToSet": "$customerName"}}}, {"$project": {"ats": "$_id", "count": 1, "customer_count": {"$size": "$customers"}}}, {"$sort": {"count": -1}}, {"$limit": 15}],
-        "ch": f"SELECT `{get_cf('ats')}`, count() as cnt, uniqExact(`{get_cf('customerName')}`) as customer_count FROM {CH_DB}.{table_name} GROUP BY `{get_cf('ats')}` ORDER BY cnt DESC LIMIT 15",
-    })
+    # 14. Date-based grouping
+    if date_fields:
+        mf_d, cf_d = date_fields[0]
+        queries.append({
+            "name": f"{len(queries)+1}. Count by month ({mf_d})",
+            "mongo": [{"$group": {"_id": {"$dateToString": {"format": "%Y-%m", "date": f"${mf_d}"}}, "count": {"$sum": 1}}}, {"$sort": {"_id": -1}}, {"$limit": 12}],
+            "ch": f"SELECT substring(`{cf_d}`, 1, 7) as month, count() as cnt FROM {CH_DB}.{table_name} WHERE `{cf_d}` IS NOT NULL AND `{cf_d}` != '' GROUP BY month ORDER BY month DESC LIMIT 12",
+        })
 
-    # 12. Alerts by experience × pod
-    queries.append({
-        "name": "12. Alerts by experience × pod",
-        "mongo": [{"$group": {"_id": {"exp": "$experience", "pod": "$pod"}, "count": {"$sum": 1}}}, {"$sort": {"count": -1}}, {"$limit": 30}],
-        "ch": f"SELECT `{get_cf('experience')}`, `{get_cf('pod')}`, count() as cnt FROM {CH_DB}.{table_name} GROUP BY `{get_cf('experience')}`, `{get_cf('pod')}` ORDER BY cnt DESC LIMIT 30",
-    })
+    # 15-16. Multi-filter queries
+    if len(group_fields) >= 2 and sample_doc:
+        mf1, cf1 = group_fields[0]
+        mf2, cf2 = group_fields[1]
+        val1 = sample_doc.get(mf1)
+        val2 = sample_doc.get(mf2)
+        if val1 and val2 and isinstance(val1, str) and isinstance(val2, str):
+            queries.append({
+                "name": f"{len(queries)+1}. Multi-filter ({mf1} + {mf2})",
+                "mongo": [{"$match": {mf1: val1, mf2: val2}}, {"$count": "total"}],
+                "ch": f"SELECT count() as total FROM {CH_DB}.{table_name} WHERE `{cf1}` = '{val1}' AND `{cf2}` = '{val2}'",
+            })
 
-    # 13. Premier customers with open alerts
-    queries.append({
-        "name": "13. Premier customers with open alerts",
-        "mongo": [{"$match": {"customerSegment": "Premier", "status": {"$ne": "resolved"}}}, {"$group": {"_id": "$customerName", "count": {"$sum": 1}}}, {"$sort": {"count": -1}}, {"$limit": 10}],
-        "ch": f"SELECT `{get_cf('customerName')}`, count() as cnt FROM {CH_DB}.{table_name} WHERE `{get_cf('customerSegment')}` = 'Premier' AND `{get_cf('status')}` != 'resolved' GROUP BY `{get_cf('customerName')}` ORDER BY cnt DESC LIMIT 10",
-    })
+    # Fill remaining slots with additional GROUP BY combinations
+    for i in range(4, min(len(group_fields), 8)):
+        if len(queries) >= 20:
+            break
+        mf, cf = group_fields[i]
+        queries.append({
+            "name": f"{len(queries)+1}. Count by {mf}",
+            "mongo": [{"$group": {"_id": f"${mf}", "count": {"$sum": 1}}}, {"$sort": {"count": -1}}],
+            "ch": f"SELECT `{cf}`, count() as cnt FROM {CH_DB}.{table_name} GROUP BY `{cf}` ORDER BY cnt DESC",
+        })
 
-    # 14. Alert types per data centre
-    queries.append({
-        "name": "14. Alert types per data centre",
-        "mongo": [{"$group": {"_id": {"dc": "$dataCentre", "type": "$alertType"}, "count": {"$sum": 1}}}, {"$sort": {"count": -1}}],
-        "ch": f"SELECT `{get_cf('dataCentre')}`, `{get_cf('alertType')}`, count() as cnt FROM {CH_DB}.{table_name} GROUP BY `{get_cf('dataCentre')}`, `{get_cf('alertType')}` ORDER BY cnt DESC",
-    })
-
-    # 15. Jira status by product (filter non-empty tickets)
-    queries.append({
-        "name": "15. Jira status by product",
-        "mongo": [{"$match": {"jiraTicketNumber": {"$exists": True, "$ne": ""}}}, {"$group": {"_id": {"product": "$product", "jira_status": "$jiraTicketStatus"}, "count": {"$sum": 1}}}, {"$sort": {"count": -1}}],
-        "ch": f"SELECT `{get_cf('product')}`, `{get_cf('jiraTicketStatus')}`, count() as cnt FROM {CH_DB}.{table_name} WHERE `{get_cf('jiraTicketNumber')}` IS NOT NULL AND `{get_cf('jiraTicketNumber')}` != '' GROUP BY `{get_cf('product')}`, `{get_cf('jiraTicketStatus')}` ORDER BY cnt DESC",
-    })
-
-    # 16. High-repeat alerts (value > 10) by customer
-    queries.append({
-        "name": "16. High-repeat alerts (value>10) by customer",
-        "mongo": [{"$match": {"value": {"$gt": 10}}}, {"$group": {"_id": "$customerName", "count": {"$sum": 1}, "max_value": {"$max": "$value"}}}, {"$sort": {"count": -1}}, {"$limit": 20}],
-        "ch": f"SELECT `{get_cf('customerName')}`, count() as cnt, max(toInt64OrZero(`{get_cf('value')}`)) as max_value FROM {CH_DB}.{table_name} WHERE toInt64OrZero(`{get_cf('value')}`) > 10 GROUP BY `{get_cf('customerName')}` ORDER BY cnt DESC LIMIT 20",
-    })
-
-    # 17. Service × alertType heatmap
-    queries.append({
-        "name": "17. Service × alertType heatmap",
-        "mongo": [{"$group": {"_id": {"service": "$service", "type": "$alertType"}, "count": {"$sum": 1}}}, {"$sort": {"count": -1}}, {"$limit": 50}],
-        "ch": f"SELECT `{get_cf('service')}`, `{get_cf('alertType')}`, count() as cnt FROM {CH_DB}.{table_name} GROUP BY `{get_cf('service')}`, `{get_cf('alertType')}` ORDER BY cnt DESC LIMIT 50",
-    })
-
-    # 18. Unique alert names per product (cardinality)
-    queries.append({
-        "name": "18. Unique alert names per product",
-        "mongo": [{"$group": {"_id": "$product", "unique_alerts": {"$addToSet": "$alertname"}}}, {"$project": {"product": "$_id", "cardinality": {"$size": "$unique_alerts"}}}, {"$sort": {"cardinality": -1}}],
-        "ch": f"SELECT `{get_cf('product')}`, uniqExact(`{get_cf('alertname')}`) as cardinality FROM {CH_DB}.{table_name} GROUP BY `{get_cf('product')}` ORDER BY cardinality DESC",
-    })
-
-    # 19. Acknowledged ratio by region
-    queries.append({
-        "name": "19. Acknowledged ratio by region",
-        "mongo": [{"$group": {"_id": "$apmRegion", "total": {"$sum": 1}, "acked": {"$sum": {"$cond": [{"$ne": ["$acknowledgedAt", None]}, 1, 0]}}}}, {"$project": {"region": "$_id", "total": 1, "acked": 1, "rate": {"$divide": ["$acked", "$total"]}}}],
-        "ch": f"SELECT `{get_cf('apmRegion')}`, count() as total, countIf(`{get_cf('acknowledgedAt')}` IS NOT NULL AND `{get_cf('acknowledgedAt')}` != '') as acked, acked / total as rate FROM {CH_DB}.{table_name} GROUP BY `{get_cf('apmRegion')}`",
-    })
-
-    # 20. Full cross-tab: region × segment × status
-    queries.append({
-        "name": "20. Cross-tab: region × segment × status",
-        "mongo": [{"$group": {"_id": {"region": "$apmRegion", "segment": "$customerSegment", "status": "$status"}, "count": {"$sum": 1}}}, {"$sort": {"count": -1}}],
-        "ch": f"SELECT `{get_cf('apmRegion')}`, `{get_cf('customerSegment')}`, `{get_cf('status')}`, count() as cnt FROM {CH_DB}.{table_name} GROUP BY `{get_cf('apmRegion')}`, `{get_cf('customerSegment')}`, `{get_cf('status')}` ORDER BY cnt DESC",
-    })
-
-    return queries
+    return queries[:20]
 
 
 # ============================================================

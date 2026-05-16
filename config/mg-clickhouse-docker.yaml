@@ -1,5 +1,7 @@
 # mg-clickhouse configuration for Docker Compose
-# MongoDB Replica Set: 1 Primary + 2 Secondaries
+# MongoDB: 3-node replica set (1 primary + 2 secondaries)
+# ClickHouse: single node
+
 mongo:
   uri: "mongodb://mongo-primary:27017,mongo-secondary1:27017,mongo-secondary2:27017/?replicaSet=rs0"
   database: "myapp"
