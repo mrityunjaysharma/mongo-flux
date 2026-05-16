@@ -36,9 +36,43 @@ MongoDB runs as a 3-node replica set (`rs0`): 1 primary + 2 secondaries. For rea
 
 ## Benchmark Results
 
-### Read Performance — MongoDB vs Standalone CH vs Distributed CH (500K records, 5 iterations)
+### Break-Even Analysis: MongoDB vs MongoDB+Index vs mg-clickhouse
 
-| Query | MongoDB (ms) | Standalone CH (ms) | Distributed CH 3-shard (ms) | S speedup | D speedup |
+Tested 5 complex aggregation queries (2D/3D GROUP BY, conditional counts, date bucketing, Top-N) at increasing data sizes to find where mg-clickhouse becomes faster.
+
+```mermaid
+xychart-beta
+    title "Avg Query Latency by Data Size (ms, log scale)"
+    x-axis ["100", "500", "1K", "5K", "10K", "50K", "100K", "500K", "1M", "2M"]
+    y-axis "Latency (ms)" 0 --> 3000
+    line [1.1, 2.0, 2.6, 7.4, 13.3, 55.4, 102.1, 562.6, 1139.4, 2853.5]
+    line [1.1, 1.8, 2.4, 9.2, 13.2, 70.6, 111.6, 515.2, 1085.4, 2744.7]
+    line [5.4, 6.4, 4.8, 10.3, 5.4, 8.7, 8.4, 11.2, 13.1, 21.5]
+```
+
+| Size | MongoDB | Mongo+Index | mg-clickhouse | Speedup | Winner |
+|:-----|:--------|:------------|:--------------|:--------|:-------|
+| 100 | 1.1 ms | 1.1 ms | 5.4 ms | — | MongoDB |
+| 500 | 2.0 ms | 1.8 ms | 6.4 ms | — | Mongo+Index |
+| 1,000 | 2.6 ms | 2.4 ms | 4.8 ms | — | Mongo+Index |
+| 5,000 | 7.4 ms | 9.2 ms | 10.3 ms | — | MongoDB |
+| 10,000 | 13.3 ms | 13.2 ms | 5.4 ms | 2.5x | mg-clickhouse ⚡ |
+| 50,000 | 55.4 ms | 70.6 ms | 8.7 ms | 6.4x | mg-clickhouse ⚡ |
+| 100,000 | 102.1 ms | 111.6 ms | 8.4 ms | 12.1x | mg-clickhouse ⚡ |
+| 500,000 | 562.6 ms | 515.2 ms | 11.2 ms | 50.1x | mg-clickhouse ⚡ |
+| 1,000,000 | 1,139 ms | 1,085 ms | 13.1 ms | 87.3x | mg-clickhouse ⚡ |
+| 2,000,000 | 2,854 ms | 2,745 ms | 21.5 ms | 132.5x | mg-clickhouse ⚡ |
+
+**Break-even point: ~10,000 documents.** Below this, MongoDB is faster due to HTTP round-trip overhead. Above this, mg-clickhouse wins decisively — and the gap grows linearly with data size. Indexes do not help aggregations (they're designed for point lookups, not full-collection scans).
+
+Key observations:
+- mg-clickhouse latency stays flat (5-21ms) regardless of data size — columnar scans are O(columns), not O(rows)
+- MongoDB latency grows linearly: ~1ms per 1,000 documents
+- At 2M documents: 132.5x faster with mg-clickhouse (21ms vs 2,854ms)
+
+### Read Performance — Standalone vs Distributed (500K records)
+
+| Query | MongoDB (ms) | mg-clickhouse (ms) | Distributed 3-shard (ms) | Speedup | D speedup |
 |:------|:-------------|:-------------------|:----------------------------|:----------|:----------|
 | [Count by status (GROUP BY)](benchmark/distributed_results.json#L5) | 822.8 | 16.5 | 61.1 | 50.0x | 13.5x |
 | [Avg amount by region](benchmark/distributed_results.json#L10) | 886.1 | 21.5 | 44.4 | 41.2x | 20.0x |
@@ -50,7 +84,7 @@ MongoDB runs as a 3-node replica set (`rs0`): 1 primary + 2 secondaries. For rea
 | [Percentile + multi-agg](benchmark/distributed_results.json#L40) | 1,206.1 | 22.6 | 57.8 | 53.3x | 20.9x |
 | [Heavy aggregation (uniqExact)](benchmark/distributed_results.json#L45) | 1,336.5 | 140.5 | 250.9 | 9.5x | 5.3x |
 
-**Standalone avg: 26.5x** | **Distributed avg: 12.3x** | Distributed wins on large parallel scans (date range: 23.7x vs 19.2x). Standalone wins when data fits in single-node RAM. Distributed shines at 10M+ rows/shard.
+**Standalone avg: 26.5x** | **Distributed avg: 12.3x** | Distributed wins on large parallel scans (date range: 23.7x vs 19.2x). Standalone wins when data fits in single-node RAM.
 
 ### Write Overhead (200K records)
 
@@ -239,6 +273,9 @@ Runs as non-root (`mgch`), uses `tini` for signal handling, graceful shutdown fl
 
 ```bash
 pip install pymongo requests
+
+# Break-even benchmark (MongoDB vs MongoDB+Index vs mg-clickhouse)
+python3 benchmark/breakeven_benchmark.py --max-size 2000000
 
 # Read benchmark
 python3 benchmark/read_benchmark.py --records 1000000 --iterations 5
