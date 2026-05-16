@@ -1,126 +1,126 @@
 {
-  "timestamp": "2026-05-15T19:57:00.800594",
+  "timestamp": "2026-05-16T20:50:19.911250",
   "records": 500000,
   "results": [
     {
       "query": "1. Count by status",
-      "mongo_avg_ms": 313.0746039969381,
-      "ch_avg_ms": 8.163256000261754,
-      "speedup": 38.351682709313465
+      "mongo_avg_ms": 428.1915951999508,
+      "ch_avg_ms": 8.193922400096199,
+      "speedup": 52.25721873994362
     },
     {
       "query": "2. Revenue by region",
-      "mongo_avg_ms": 281.03950360091403,
-      "ch_avg_ms": 9.683305796352215,
-      "speedup": 29.023094954492095
+      "mongo_avg_ms": 375.03710899991347,
+      "ch_avg_ms": 7.459252400076366,
+      "speedup": 50.27810950546115
     },
     {
       "query": "3. Avg order value by category",
-      "mongo_avg_ms": 331.7975896032294,
-      "ch_avg_ms": 9.046266600489616,
-      "speedup": 36.67784780798649
+      "mongo_avg_ms": 308.39391720001004,
+      "ch_avg_ms": 7.158683600027871,
+      "speedup": 43.07969655186456
     },
     {
       "query": "4. Top 10 customers by spend",
-      "mongo_avg_ms": 519.4547644001432,
-      "ch_avg_ms": 33.717494003940374,
-      "speedup": 15.406090510149937
+      "mongo_avg_ms": 502.30722500009506,
+      "ch_avg_ms": 30.826503800108185,
+      "speedup": 16.294654374601254
     },
     {
       "query": "5. Monthly revenue trend",
-      "mongo_avg_ms": 335.41302180383354,
-      "ch_avg_ms": 11.321363999741152,
-      "speedup": 29.626555758785102
+      "mongo_avg_ms": 355.97998300017935,
+      "ch_avg_ms": 8.444072199836228,
+      "speedup": 42.15738266746269
     },
     {
       "query": "6. Revenue by region + category (2D)",
-      "mongo_avg_ms": 365.19071579677984,
-      "ch_avg_ms": 12.457201795768924,
-      "speedup": 29.31562976854212
+      "mongo_avg_ms": 362.0333822000248,
+      "ch_avg_ms": 10.987086400018597,
+      "speedup": 32.95080870570126
     },
     {
       "query": "7. Avg rating by category + status",
-      "mongo_avg_ms": 398.24416400515474,
-      "ch_avg_ms": 16.32449979952071,
-      "speedup": 24.39548953388742
+      "mongo_avg_ms": 387.21178460000374,
+      "ch_avg_ms": 14.504333200056863,
+      "speedup": 26.696283052742178
     },
     {
       "query": "8. Filter + aggregate (shipped, amount > 100)",
-      "mongo_avg_ms": 286.8990046030376,
-      "ch_avg_ms": 10.303493397077546,
-      "speedup": 27.844828306913154
+      "mongo_avg_ms": 197.79788659989208,
+      "ch_avg_ms": 9.295407599893224,
+      "speedup": 21.279097712957114
     },
     {
       "query": "9. Date range + group (2023 Q1)",
-      "mongo_avg_ms": 174.5881507958984,
-      "ch_avg_ms": 10.315965401241556,
-      "speedup": 16.924072930187048
+      "mongo_avg_ms": 157.60113420010384,
+      "ch_avg_ms": 8.22190220005723,
+      "speedup": 19.16845157790941
     },
     {
       "query": "10. Unique customers per region",
-      "mongo_avg_ms": 432.8978729987284,
-      "ch_avg_ms": 30.450454601668753,
-      "speedup": 14.216466672225138
+      "mongo_avg_ms": 421.3832016000197,
+      "ch_avg_ms": 31.307381200076634,
+      "speedup": 13.459548050572439
     },
     {
       "query": "11. Percentiles (p50, p90, p99 of amount)",
-      "mongo_avg_ms": 312.0726694003679,
-      "ch_avg_ms": 14.083751398720779,
-      "speedup": 22.158348338121996
+      "mongo_avg_ms": 289.15563179989476,
+      "ch_avg_ms": 13.697111599958589,
+      "speedup": 21.110701310250622
     },
     {
       "query": "12. Payment method distribution",
-      "mongo_avg_ms": 337.02183560526464,
-      "ch_avg_ms": 10.345180801232345,
-      "speedup": 32.57766510616399
+      "mongo_avg_ms": 343.97803119991295,
+      "ch_avg_ms": 10.626456599948142,
+      "speedup": 32.36996528095655
     },
     {
       "query": "13. Prime vs non-prime comparison",
-      "mongo_avg_ms": 339.19092699943576,
-      "ch_avg_ms": 12.859596402267925,
-      "speedup": 26.376483086173362
+      "mongo_avg_ms": 327.8188250000312,
+      "ch_avg_ms": 8.743343600053777,
+      "speedup": 37.49353107866136
     },
     {
       "query": "14. Top 5 categories by order count per region",
-      "mongo_avg_ms": 338.68104679859243,
-      "ch_avg_ms": 11.21828680334147,
-      "speedup": 30.190086306022515
+      "mongo_avg_ms": 340.3316835998339,
+      "ch_avg_ms": 9.910746199875575,
+      "speedup": 34.33966290087285
     },
     {
       "query": "15. Discount impact analysis",
-      "mongo_avg_ms": 425.2270741999382,
-      "ch_avg_ms": 13.032027398003265,
-      "speedup": 32.6293876780132
+      "mongo_avg_ms": 429.3632250001792,
+      "ch_avg_ms": 12.603944400052569,
+      "speedup": 34.065782216429675
     },
     {
       "query": "16. Hourly order distribution",
-      "mongo_avg_ms": 329.0705311985221,
-      "ch_avg_ms": 6.2135449989000335,
-      "speedup": 52.96019120434092
+      "mongo_avg_ms": 366.71120359997076,
+      "ch_avg_ms": 6.369981399893732,
+      "speedup": 57.56864589998465
     },
     {
       "query": "17. Customer lifetime value (top 20)",
-      "mongo_avg_ms": 736.9611825997708,
-      "ch_avg_ms": 51.86627660004888,
-      "speedup": 14.208870019388982
+      "mongo_avg_ms": 958.914038400053,
+      "ch_avg_ms": 35.316901600072015,
+      "speedup": 27.151703432503197
     },
     {
       "query": "18. Multi-match pipeline (region + status + date)",
-      "mongo_avg_ms": 137.76184099551756,
-      "ch_avg_ms": 9.287282399600372,
-      "speedup": 14.833385598508924
+      "mongo_avg_ms": 165.74117339987424,
+      "ch_avg_ms": 10.514114800025709,
+      "speedup": 15.763683063406248
     },
     {
       "query": "19. Revenue with tax calculation",
-      "mongo_avg_ms": 393.3837393997237,
-      "ch_avg_ms": 14.185079003800638,
-      "speedup": 27.732220546274263
+      "mongo_avg_ms": 532.7464307998525,
+      "ch_avg_ms": 14.705440000125236,
+      "speedup": 36.227847027720046
     },
     {
       "query": "20. Full analytics dashboard query",
-      "mongo_avg_ms": 394.23231299442705,
-      "ch_avg_ms": 12.223913602065295,
-      "speedup": 32.25090800116743
+      "mongo_avg_ms": 409.8105475999546,
+      "ch_avg_ms": 12.490071799948055,
+      "speedup": 32.81090406555221
     }
   ]
 }
