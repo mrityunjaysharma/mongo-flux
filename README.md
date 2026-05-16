@@ -16,23 +16,18 @@ No ETL. No batch jobs. No data staleness.
 
 ```mermaid
 flowchart TD
-    subgraph write_sync ["Write + Sync Path"]
-        direction TB
-        APP1[Application] -->|"writes"| MGP[(MongoDB Primary)]
-        MGP -->|replication| S1[(Secondary 1)]
-        MGP -->|replication| S2[(Secondary 2)]
-        MGP -->|"oplog tail (async)"| MF[MongoFlux]
-        MF -->|"batch INSERT"| CH[(ClickHouse)]
-    end
+    %% Write + Sync
+    APP[Your Application]
+    APP -->|"writes (insert/update/delete)"| MGP[(MongoDB Primary)]
+    MGP -->|replication| S1[(Secondary 1)]
+    MGP -->|replication| S2[(Secondary 2)]
+    MGP -.->|"oplog tail (async)"| MF[MongoFlux]
+    MF -.->|"batch INSERT every 500ms"| CH[(ClickHouse)]
 
-    subgraph read_path ["Read Path"]
-        direction TB
-        APP2[Application] -->|"find() / aggregate()"| MF2[MongoFlux Proxy]
-        MF2 -->|"clickhouse=true"| CH2[(ClickHouse)]
-        MF2 -->|"clickhouse=false"| MGP2[(MongoDB)]
-    end
-
-    write_sync ~~~ read_path
+    %% Read routing
+    APP -->|"analytical reads (find/aggregate)"| MF
+    MF -->|"clickhouse=true → SQL"| CH
+    MF -->|"clickhouse=false → passthrough"| MGP
 ```
 
 Three things happen:
