@@ -145,45 +145,34 @@ MongoFlux translates MongoDB queries to ClickHouse SQL via a two-phase AST:
 
 ## Configuration
 
-```yaml
-mongo:
-  uri: "mongodb://localhost:27017/?replicaSet=rs0"
-  database: "myapp"
+MongoFlux is configured entirely via environment variables with the `MG_` prefix. Sensible defaults are provided for local development.
 
-clickhouse:
-  host: "localhost"
-  port: 8123
-  database: "analytics"
-  user: "default"
-  password: ""
-
-sync:
-  mode: "oplog"              # or "changestream" for Atlas/sharded
-  batch_size: 1000
-  flush_interval_ms: 500
-  resume_token_path: "/var/lib/mongoflux/resume_tokens"
-  max_pending_rows: 100000   # backpressure threshold
-  propagate_deletes: false   # tombstone rows on delete
-  delete_column: "_deleted"
-
-api:
-  port: 9090
-  bind: "0.0.0.0"
-
-routing:
-  clickhouse_param: "clickhouse"
-
-logging:
-  level: "info"
-  file: ""
-```
+| Variable | Default | Description |
+|:---------|:--------|:------------|
+| `MG_MONGO_URI` | `mongodb://localhost:27017/?replicaSet=rs0` | MongoDB connection URI |
+| `MG_MONGO_DB` | `myapp` | Source database name |
+| `MG_CH_HOST` | `localhost` | ClickHouse host |
+| `MG_CH_PORT` | `8123` | ClickHouse HTTP port |
+| `MG_CH_DB` | `analytics` | ClickHouse target database |
+| `MG_CH_USER` | `default` | ClickHouse user |
+| `MG_CH_PASSWORD` | _(empty)_ | ClickHouse password |
+| `MG_CH_CLUSTER` | _(empty)_ | ClickHouse cluster name (for distributed) |
+| `MG_SYNC_MODE` | `oplog` | Sync mode: `oplog` or `changestream` |
+| `MG_SYNC_BATCH_SIZE` | `1000` | Rows per batch |
+| `MG_SYNC_FLUSH_INTERVAL_MS` | `500` | Max time between flushes |
+| `MG_SYNC_RESUME_TOKEN_PATH` | `/var/lib/mongoflux/resume_tokens` | Where to persist oplog position |
+| `MG_SYNC_MAX_PENDING_ROWS` | `100000` | Backpressure threshold |
+| `MG_SYNC_PROPAGATE_DELETES` | `false` | Write tombstone rows on delete |
+| `MG_SYNC_DELETE_COLUMN` | `_deleted` | Column name for delete marker |
+| `MG_API_PORT` | `9090` | Management API port |
+| `MG_API_BIND` | `0.0.0.0` | Management API bind address |
+| `MG_ROUTING_CLICKHOUSE_PARAM` | `clickhouse` | URI param name for routing |
+| `MG_LOG_LEVEL` | `info` | Log level |
 
 | Sync mode | When to use | Requires |
 |:----------|:------------|:---------|
 | `oplog` | Direct replica set access, lowest latency | `local.oplog.rs` access |
 | `changestream` | Atlas, sharded clusters | MongoDB 4.0+ |
-
-Environment variable overrides use the `MG_` prefix: `MG_MONGO_URI`, `MG_CH_HOST`, `MG_CH_PORT`, `MG_CH_DB`, `MG_CH_USER`, `MG_CH_PASSWORD`.
 
 ## API
 
@@ -247,7 +236,7 @@ mongoflux_sync_running
 
 ```bash
 go build -o mongoflux ./cmd/mongoflux
-./mongoflux /path/to/config.yaml
+./mongoflux
 ```
 
 Requires: Go 1.22+
@@ -256,7 +245,9 @@ Requires: Go 1.22+
 
 ```bash
 docker build -t mongoflux .
-docker run -v ./config.yaml:/etc/mongoflux/mongoflux.yaml -p 9090:9090 mongoflux
+docker run -e MG_MONGO_URI="mongodb://mongo:27017/?replicaSet=rs0" \
+           -e MG_CH_HOST=clickhouse \
+           -p 9090:9090 mongoflux
 ```
 
 Alpine-based image (~17MB), runs as non-root, uses tini for signal handling. Graceful shutdown flushes pending batches and persists oplog position.
