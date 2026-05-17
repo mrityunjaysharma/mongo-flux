@@ -1,22 +1,14 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" font-family="'Inter', -apple-system, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1500 1000" font-family="'Inter', -apple-system, sans-serif">
   <defs>
     <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" style="stop-color:#f8fafc"/>
       <stop offset="100%" style="stop-color:#f1f5f9"/>
     </linearGradient>
-    <linearGradient id="chGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" style="stop-color:#10b981"/>
-      <stop offset="100%" style="stop-color:#059669"/>
-    </linearGradient>
-    <linearGradient id="mongoGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" style="stop-color:#6366f1"/>
-      <stop offset="100%" style="stop-color:#4f46e5"/>
-    </linearGradient>
     <filter id="cardShadow">
-      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000" flood-opacity="0.06"/>
+      <feDropShadow dx="0" dy="3" stdDeviation="6" flood-color="#000" flood-opacity="0.06"/>
     </filter>
-    <filter id="glow">
-      <feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="#10b981" flood-opacity="0.3"/>
+    <filter id="glowGreen">
+      <feDropShadow dx="0" dy="0" stdDeviation="5" flood-color="#10b981" flood-opacity="0.2"/>
     </filter>
     <marker id="arr" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
       <polygon points="0 0, 8 3, 0 6" fill="#94a3b8"/>
@@ -27,231 +19,250 @@
     <marker id="arrIndigo" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
       <polygon points="0 0, 8 3, 0 6" fill="#6366f1"/>
     </marker>
-    <marker id="arrAmber" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
-      <polygon points="0 0, 8 3, 0 6" fill="#d97706"/>
+    <marker id="arrAmber" markerWidth="9" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 9 3.5, 0 7" fill="#d97706"/>
     </marker>
   </defs>
 
   <!-- Background -->
-  <rect width="1200" height="800" fill="url(#bgGrad)"/>
+  <rect width="1500" height="1000" fill="url(#bgGrad)"/>
 
-  <!-- Subtle grid pattern -->
-  <g opacity="0.03">
-    <line x1="0" y1="100" x2="1200" y2="100" stroke="#000" stroke-width="1"/>
-    <line x1="0" y1="200" x2="1200" y2="200" stroke="#000" stroke-width="1"/>
-    <line x1="0" y1="300" x2="1200" y2="300" stroke="#000" stroke-width="1"/>
-    <line x1="0" y1="400" x2="1200" y2="400" stroke="#000" stroke-width="1"/>
-    <line x1="0" y1="500" x2="1200" y2="500" stroke="#000" stroke-width="1"/>
-    <line x1="0" y1="600" x2="1200" y2="600" stroke="#000" stroke-width="1"/>
-    <line x1="0" y1="700" x2="1200" y2="700" stroke="#000" stroke-width="1"/>
-    <line x1="200" y1="0" x2="200" y2="800" stroke="#000" stroke-width="1"/>
-    <line x1="400" y1="0" x2="400" y2="800" stroke="#000" stroke-width="1"/>
-    <line x1="600" y1="0" x2="600" y2="800" stroke="#000" stroke-width="1"/>
-    <line x1="800" y1="0" x2="800" y2="800" stroke="#000" stroke-width="1"/>
-    <line x1="1000" y1="0" x2="1000" y2="800" stroke="#000" stroke-width="1"/>
+  <!-- Title -->
+  <text x="750" y="38" text-anchor="middle" font-size="24" font-weight="800" fill="#0f172a" letter-spacing="-0.5">MongoFlux Architecture</text>
+
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!-- Your Application -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <g transform="translate(580, 85)">
+    <rect x="0" y="0" width="280" height="54" rx="27" fill="#0f172a" filter="url(#cardShadow)"/>
+    <text x="140" y="32" text-anchor="middle" font-size="15" font-weight="700" fill="#ffffff">Your Application</text>
   </g>
 
-  <!-- Title area -->
-  <text x="600" y="42" text-anchor="middle" font-size="24" font-weight="800" fill="#0f172a" letter-spacing="-0.5">MongoFlux</text>
-  <text x="600" y="64" text-anchor="middle" font-size="13" fill="#64748b" letter-spacing="0.3">Real-time MongoDB → ClickHouse CDC with transparent query routing</text>
+  <!-- Arrow: App → writes (down-left to MongoDB) -->
+  <path d="M 660 139 L 660 168 Q 660 180 647 180 L 340 180 Q 327 180 327 193 L 327 215" stroke="#94a3b8" stroke-width="2.5" fill="none" marker-end="url(#arr)"/>
+  <rect x="440" y="168" width="52" height="18" rx="9" fill="#fef2f2"/>
+  <text x="466" y="181" text-anchor="middle" font-size="10" font-weight="600" fill="#dc2626">writes</text>
 
-  <!-- ═══════════════════════════════════════ -->
-  <!-- YOUR APP (top center) -->
-  <!-- ═══════════════════════════════════════ -->
-  <g transform="translate(470, 90)">
-    <rect x="0" y="0" width="260" height="56" rx="28" fill="#0f172a" filter="url(#cardShadow)"/>
-    <text x="130" y="34" text-anchor="middle" font-size="15" font-weight="700" fill="#ffffff">Your Application</text>
-  </g>
+  <!-- Arrow: App → reads (down-right to MongoFlux) -->
+  <path d="M 780 139 L 780 168 Q 780 180 793 180 L 1060 180 Q 1073 180 1073 193 L 1073 215" stroke="#94a3b8" stroke-width="2.5" fill="none" marker-end="url(#arr)"/>
+  <rect x="890" y="168" width="48" height="18" rx="9" fill="#eff6ff"/>
+  <text x="914" y="181" text-anchor="middle" font-size="10" font-weight="600" fill="#2563eb">reads</text>
 
-  <!-- Arrows from app down -->
-  <!-- Writes arrow (left) -->
-  <path d="M 540 146 L 540 180 Q 540 195 525 195 L 260 195 Q 245 195 245 210 L 245 240" stroke="#ef4444" stroke-width="2.5" fill="none" marker-end="url(#arr)"/>
-  <text x="370" y="188" text-anchor="middle" font-size="11" font-weight="600" fill="#ef4444">writes</text>
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!-- LEFT: MongoDB Replica Set (big box) -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <g transform="translate(80, 225)">
+    <rect x="0" y="0" width="500" height="380" rx="16" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5" filter="url(#cardShadow)"/>
+    <text x="28" y="32" font-size="12" font-weight="700" fill="#374151" letter-spacing="0.5">MONGODB REPLICA SET</text>
 
-  <!-- Reads arrow (right) -->
-  <path d="M 660 146 L 660 180 Q 660 195 675 195 L 820 195 Q 835 195 835 210 L 835 240" stroke="#2563eb" stroke-width="2.5" fill="none" marker-end="url(#arr)"/>
-  <text x="750" y="188" text-anchor="middle" font-size="11" font-weight="600" fill="#2563eb">reads</text>
-
-  <!-- ═══════════════════════════════════════ -->
-  <!-- LEFT COLUMN: Write Path -->
-  <!-- ═══════════════════════════════════════ -->
-
-  <!-- MongoDB Primary -->
-  <g transform="translate(140, 250)">
-    <rect x="0" y="0" width="210" height="90" rx="12" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5" filter="url(#cardShadow)"/>
-    <circle cx="30" cy="30" r="14" fill="#16a34a" opacity="0.12"/>
-    <circle cx="30" cy="30" r="6" fill="#16a34a"/>
-    <text x="52" y="28" font-size="11" fill="#64748b" font-weight="500">MongoDB</text>
-    <text x="52" y="48" font-size="16" font-weight="700" fill="#0f172a">Primary</text>
-    <text x="20" y="74" font-size="11" fill="#94a3b8">insert · update · delete</text>
-  </g>
-
-  <!-- Arrow: Primary → Secondaries -->
-  <path d="M 245 340 L 245 380" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="5,4" marker-end="url(#arr)"/>
-  <text x="265" y="365" font-size="10" fill="#94a3b8">replication</text>
-
-  <!-- Secondaries -->
-  <g transform="translate(120, 390)">
-    <rect x="0" y="0" width="110" height="50" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.2"/>
-    <text x="55" y="22" text-anchor="middle" font-size="10" fill="#64748b">Secondary</text>
-    <text x="55" y="38" text-anchor="middle" font-size="12" font-weight="600" fill="#0f172a">Node 1</text>
-  </g>
-  <g transform="translate(240, 390)">
-    <rect x="0" y="0" width="110" height="50" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.2"/>
-    <text x="55" y="22" text-anchor="middle" font-size="10" fill="#64748b">Secondary</text>
-    <text x="55" y="38" text-anchor="middle" font-size="12" font-weight="600" fill="#0f172a">Node 2</text>
-  </g>
-
-  <!-- ═══════════════════════════════════════ -->
-  <!-- CENTER: MongoFlux Engine -->
-  <!-- ═══════════════════════════════════════ -->
-
-  <!-- Main engine card -->
-  <g transform="translate(560, 250)">
-    <rect x="0" y="0" width="340" height="320" rx="16" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5" filter="url(#cardShadow)"/>
-    
-    <!-- Header stripe -->
-    <rect x="0" y="0" width="340" height="52" rx="16" fill="#0f172a"/>
-    <rect x="0" y="36" width="340" height="16" fill="#0f172a"/>
-    <text x="170" y="34" text-anchor="middle" font-size="14" font-weight="700" fill="#ffffff" letter-spacing="0.5">MONGOFLUX ENGINE</text>
-
-    <!-- Stage 1 -->
-    <g transform="translate(24, 68)">
-      <rect x="0" y="0" width="292" height="62" rx="10" fill="#faf5ff" stroke="#e9d5ff" stroke-width="1.2"/>
-      <rect x="0" y="0" width="4" height="62" rx="2" fill="#8b5cf6"/>
-      <text x="20" y="22" font-size="10" font-weight="700" fill="#7c3aed" letter-spacing="1">01</text>
-      <text x="46" y="22" font-size="13" font-weight="700" fill="#1e1b4b">Query Router</text>
-      <text x="20" y="44" font-size="11" fill="#64748b">?clickhouse=true → ClickHouse</text>
-      <text x="20" y="56" font-size="11" fill="#64748b">otherwise → MongoDB secondary</text>
+    <!-- Primary -->
+    <g transform="translate(150, 55)">
+      <rect x="0" y="0" width="200" height="80" rx="10" fill="#f8fafc" stroke="#d1d5db" stroke-width="1.2"/>
+      <circle cx="24" cy="26" r="8" fill="#16a34a"/>
+      <text x="42" y="24" font-size="10" fill="#64748b">MongoDB</text>
+      <text x="42" y="44" font-size="15" font-weight="700" fill="#0f172a">Primary</text>
+      <text x="18" y="66" font-size="10" fill="#94a3b8">insert · update · delete</text>
     </g>
 
-    <!-- Stage 2 -->
-    <g transform="translate(24, 146)">
-      <rect x="0" y="0" width="292" height="62" rx="10" fill="#fffbeb" stroke="#fde68a" stroke-width="1.2"/>
-      <rect x="0" y="0" width="4" height="62" rx="2" fill="#f59e0b"/>
-      <text x="20" y="22" font-size="10" font-weight="700" fill="#d97706" letter-spacing="1">02</text>
-      <text x="46" y="22" font-size="13" font-weight="700" fill="#451a03">Schema Registry</text>
-      <text x="20" y="44" font-size="11" fill="#64748b">Mongo field → CH column mapping</text>
-      <text x="20" y="56" font-size="11" fill="#64748b">type coercion + validation</text>
+    <!-- Dotted line: Primary → Secondary 1 -->
+    <path d="M 210 135 L 140 175" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="5,4" marker-end="url(#arr)"/>
+
+    <!-- Dotted line: Primary → Secondary 2 -->
+    <path d="M 290 135 L 360 175" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="5,4" marker-end="url(#arr)"/>
+
+    <!-- Replication label -->
+    <text x="250" y="160" text-anchor="middle" font-size="9" fill="#94a3b8">replication</text>
+
+    <!-- Secondary 1 -->
+    <g transform="translate(50, 185)">
+      <rect x="0" y="0" width="160" height="56" rx="8" fill="#f8fafc" stroke="#d1d5db" stroke-width="1"/>
+      <circle cx="20" cy="20" r="5" fill="#6366f1"/>
+      <text x="34" y="22" font-size="9" fill="#64748b">Secondary</text>
+      <text x="34" y="40" font-size="12" font-weight="600" fill="#0f172a">Node 1</text>
     </g>
 
-    <!-- Stage 3 -->
-    <g transform="translate(24, 224)">
-      <rect x="0" y="0" width="292" height="62" rx="10" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.2"/>
-      <rect x="0" y="0" width="4" height="62" rx="2" fill="#2563eb"/>
-      <text x="20" y="22" font-size="10" font-weight="700" fill="#2563eb" letter-spacing="1">03</text>
-      <text x="46" y="22" font-size="13" font-weight="700" fill="#172554">Query Translator</text>
-      <text x="20" y="44" font-size="11" fill="#64748b">BSON → ExprNode AST → SQL</text>
-      <text x="20" y="56" font-size="11" fill="#64748b">12 stages · 12 accumulators · 40+ exprs</text>
+    <!-- Secondary 2 -->
+    <g transform="translate(290, 185)">
+      <rect x="0" y="0" width="160" height="56" rx="8" fill="#f8fafc" stroke="#d1d5db" stroke-width="1"/>
+      <circle cx="20" cy="20" r="5" fill="#6366f1"/>
+      <text x="34" y="22" font-size="9" fill="#64748b">Secondary</text>
+      <text x="34" y="40" font-size="12" font-weight="600" fill="#0f172a">Node 2</text>
     </g>
 
-    <!-- Connecting dots between stages -->
-    <circle cx="170" cy="134" r="3" fill="#d1d5db"/>
-    <circle cx="170" cy="140" r="2" fill="#e5e7eb"/>
-    <circle cx="170" cy="212" r="3" fill="#d1d5db"/>
-    <circle cx="170" cy="218" r="2" fill="#e5e7eb"/>
+    <!-- Oplog label near primary -->
+    <rect x="360" y="80" width="70" height="20" rx="5" fill="#fffbeb" stroke="#fde68a" stroke-width="1"/>
+    <text x="395" y="94" text-anchor="middle" font-size="9" font-weight="600" fill="#d97706">oplog.rs</text>
+
+    <!-- Reads forwarded note -->
+    <g transform="translate(50, 275)">
+      <rect x="0" y="0" width="400" height="50" rx="8" fill="#eef2ff" stroke="#c7d2fe" stroke-width="1.2"/>
+      <text x="200" y="20" text-anchor="middle" font-size="11" font-weight="600" fill="#4338ca">Reads without ?clickhouse=true</text>
+      <text x="200" y="38" text-anchor="middle" font-size="10" fill="#64748b">forwarded here unchanged → 0% overhead</text>
+    </g>
+
+    <!-- Dotted lines from secondaries to the "reads forwarded" box -->
+    <path d="M 130 241 L 130 275" stroke="#a5b4fc" stroke-width="1" stroke-dasharray="3,3"/>
+    <path d="M 370 241 L 370 275" stroke="#a5b4fc" stroke-width="1" stroke-dasharray="3,3"/>
   </g>
 
-  <!-- ═══════════════════════════════════════ -->
-  <!-- RIGHT: Output Destinations -->
-  <!-- ═══════════════════════════════════════ -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!-- RIGHT: MongoFlux Engine -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <g transform="translate(660, 225)">
+    <rect x="0" y="0" width="780" height="500" rx="16" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5" filter="url(#cardShadow)"/>
 
-  <!-- Arrow: Engine → ClickHouse -->
-  <path d="M 900 360 Q 940 360 960 320 Q 980 280 1020 280" stroke="#10b981" stroke-width="2.5" fill="none" marker-end="url(#arrGreen)"/>
+    <!-- Header -->
+    <rect x="0" y="0" width="780" height="46" rx="16" fill="#0f172a"/>
+    <rect x="0" y="30" width="780" height="16" fill="#0f172a"/>
+    <text x="390" y="30" text-anchor="middle" font-size="13" font-weight="700" fill="#ffffff" letter-spacing="1">MONGOFLUX ENGINE</text>
 
-  <!-- Arrow: Engine → MongoDB Secondary -->
-  <path d="M 900 460 Q 940 460 960 500 Q 980 540 1020 540" stroke="#6366f1" stroke-width="2.5" fill="none" marker-end="url(#arrIndigo)"/>
+    <!-- ─── Stage 1: Query Router ─── -->
+    <g transform="translate(24, 62)">
+      <rect x="0" y="0" width="732" height="90" rx="10" fill="#faf5ff" stroke="#e9d5ff" stroke-width="1.2"/>
+      <rect x="0" y="0" width="4" height="90" rx="2" fill="#8b5cf6"/>
+      <text x="20" y="20" font-size="9" font-weight="700" fill="#7c3aed" letter-spacing="0.8">01  QUERY ROUTER</text>
+      <text x="20" y="42" font-size="13" font-weight="700" fill="#1e1b4b">Route by URI parameter</text>
 
-  <!-- ClickHouse destination -->
-  <g transform="translate(1030, 230)">
-    <rect x="0" y="0" width="150" height="100" rx="12" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="2" filter="url(#cardShadow)"/>
-    <rect x="0" y="0" width="150" height="100" rx="12" fill="none" stroke="#10b981" stroke-width="0.5" filter="url(#glow)"/>
-    <text x="75" y="30" text-anchor="middle" font-size="11" fill="#065f46" font-weight="500">Analytics</text>
-    <text x="75" y="52" text-anchor="middle" font-size="16" font-weight="800" fill="#065f46">ClickHouse</text>
-    <text x="75" y="76" text-anchor="middle" font-size="22" font-weight="800" fill="#059669">27x</text>
-    <text x="75" y="92" text-anchor="middle" font-size="10" fill="#6b7280">faster reads</text>
-  </g>
+      <!-- Two paths -->
+      <g transform="translate(20, 54)">
+        <rect x="0" y="0" width="340" height="26" rx="6" fill="#ecfdf5" stroke="#a7f3d0" stroke-width="1"/>
+        <text x="12" y="17" font-size="10" fill="#065f46" font-weight="600">?clickhouse=true  →  translate to SQL → ClickHouse</text>
+      </g>
+      <g transform="translate(380, 54)">
+        <rect x="0" y="0" width="340" height="26" rx="6" fill="#eef2ff" stroke="#c7d2fe" stroke-width="1"/>
+        <text x="12" y="17" font-size="10" fill="#3730a3" font-weight="600">no param  →  forward unchanged → MongoDB Secondary</text>
+      </g>
+    </g>
 
-  <!-- MongoDB Secondary destination -->
-  <g transform="translate(1030, 490)">
-    <rect x="0" y="0" width="150" height="100" rx="12" fill="#eef2ff" stroke="#a5b4fc" stroke-width="2" filter="url(#cardShadow)"/>
-    <text x="75" y="30" text-anchor="middle" font-size="11" fill="#3730a3" font-weight="500">OLTP</text>
-    <text x="75" y="52" text-anchor="middle" font-size="16" font-weight="800" fill="#312e81">Secondary</text>
-    <text x="75" y="76" text-anchor="middle" font-size="22" font-weight="800" fill="#4f46e5">0%</text>
-    <text x="75" y="92" text-anchor="middle" font-size="10" fill="#6b7280">overhead</text>
-  </g>
+    <!-- ─── Stage 2: Schema Registry ─── -->
+    <g transform="translate(24, 168)">
+      <rect x="0" y="0" width="355" height="82" rx="10" fill="#fffbeb" stroke="#fde68a" stroke-width="1.2"/>
+      <rect x="0" y="0" width="4" height="82" rx="2" fill="#f59e0b"/>
+      <text x="20" y="20" font-size="9" font-weight="700" fill="#d97706" letter-spacing="0.8">02  SCHEMA REGISTRY</text>
+      <text x="20" y="42" font-size="13" font-weight="700" fill="#451a03">Field mapping + type resolution</text>
+      <text x="20" y="60" font-size="11" fill="#64748b">mongo_field → ch_column</text>
+      <text x="20" y="74" font-size="11" fill="#64748b">CollectionMapping → ClickHouse DDL</text>
+    </g>
 
-  <!-- ═══════════════════════════════════════ -->
-  <!-- BOTTOM: Async Sync Pipeline -->
-  <!-- ═══════════════════════════════════════ -->
+    <!-- ─── Stage 3: Translator ─── -->
+    <g transform="translate(400, 168)">
+      <rect x="0" y="0" width="355" height="82" rx="10" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.2"/>
+      <rect x="0" y="0" width="4" height="82" rx="2" fill="#2563eb"/>
+      <text x="20" y="20" font-size="9" font-weight="700" fill="#2563eb" letter-spacing="0.8">03  QUERY TRANSLATOR</text>
+      <text x="20" y="42" font-size="13" font-weight="700" fill="#172554">BSON → AST → SQL</text>
+      <text x="20" y="60" font-size="11" fill="#64748b">12 pipeline stages · 12 accumulators</text>
+      <text x="20" y="74" font-size="11" fill="#64748b">40+ expressions (arithmetic, date, string)</text>
+    </g>
 
-  <!-- Dashed arrow from Primary to Sync pipeline -->
-  <path d="M 300 340 Q 300 500 350 520 Q 400 540 430 620" stroke="#d97706" stroke-width="2" stroke-dasharray="6,4" fill="none" marker-end="url(#arrAmber)"/>
-  <text x="320" y="530" font-size="10" font-weight="600" fill="#d97706" transform="rotate(-50, 320, 530)">oplog tail</text>
+    <!-- ─── Stage 4: Oplog Sync (zoomed-in) ─── -->
+    <g transform="translate(24, 268)">
+      <rect x="0" y="0" width="732" height="115" rx="10" fill="#fffbeb" stroke="#f59e0b" stroke-width="2"/>
 
-  <!-- Sync pipeline bar -->
-  <g transform="translate(100, 640)">
-    <rect x="0" y="0" width="1000" height="70" rx="12" fill="#ffffff" stroke="#fde68a" stroke-width="1.5" filter="url(#cardShadow)"/>
-    
-    <!-- Left accent -->
-    <rect x="0" y="0" width="6" height="70" rx="3" fill="#f59e0b"/>
+      <!-- Zoom badge -->
+      <rect x="668" y="8" width="50" height="18" rx="9" fill="#fef3c7" stroke="#fbbf24" stroke-width="1"/>
+      <text x="693" y="20" text-anchor="middle" font-size="8" font-weight="700" fill="#92400e">ZOOM</text>
 
-    <text x="28" y="24" font-size="12" font-weight="700" fill="#92400e">Oplog Sync</text>
-    <text x="130" y="24" font-size="11" fill="#78350f">— async, at-least-once, ReplacingMergeTree dedup</text>
+      <text x="20" y="22" font-size="9" font-weight="700" fill="#92400e" letter-spacing="0.8">04  OPLOG SYNC ENGINE</text>
+      <text x="200" y="22" font-size="10" fill="#78350f">async · at-least-once · ReplacingMergeTree dedup</text>
 
-    <!-- Pipeline steps as connected pills -->
-    <g transform="translate(28, 36)">
-      <rect x="0" y="0" width="100" height="26" rx="13" fill="#fef3c7" stroke="#fbbf24" stroke-width="1"/>
-      <text x="50" y="17" text-anchor="middle" font-size="10" font-weight="600" fill="#78350f">tail cursor</text>
+      <!-- Pipeline pills -->
+      <g transform="translate(20, 40)">
+        <rect x="0" y="0" width="88" height="28" rx="14" fill="#fef3c7" stroke="#fbbf24" stroke-width="1.2"/>
+        <text x="44" y="18" text-anchor="middle" font-size="10" font-weight="600" fill="#78350f">tail cursor</text>
 
-      <line x1="106" y1="13" x2="130" y2="13" stroke="#d97706" stroke-width="1.5" marker-end="url(#arrAmber)"/>
+        <line x1="94" y1="14" x2="116" y2="14" stroke="#d97706" stroke-width="1.5" marker-end="url(#arrAmber)"/>
 
-      <rect x="136" y="0" width="120" height="26" rx="13" fill="#fef3c7" stroke="#fbbf24" stroke-width="1"/>
-      <text x="196" y="17" text-anchor="middle" font-size="10" font-weight="600" fill="#78350f">extract fields</text>
+        <rect x="122" y="0" width="100" height="28" rx="14" fill="#fef3c7" stroke="#fbbf24" stroke-width="1.2"/>
+        <text x="172" y="18" text-anchor="middle" font-size="10" font-weight="600" fill="#78350f">extract fields</text>
 
-      <line x1="262" y1="13" x2="286" y2="13" stroke="#d97706" stroke-width="1.5" marker-end="url(#arrAmber)"/>
+        <line x1="228" y1="14" x2="250" y2="14" stroke="#d97706" stroke-width="1.5" marker-end="url(#arrAmber)"/>
 
-      <rect x="292" y="0" width="130" height="26" rx="13" fill="#fef3c7" stroke="#fbbf24" stroke-width="1"/>
-      <text x="357" y="17" text-anchor="middle" font-size="10" font-weight="600" fill="#78350f">batch (1000)</text>
+        <rect x="256" y="0" width="88" height="28" rx="14" fill="#fef3c7" stroke="#fbbf24" stroke-width="1.2"/>
+        <text x="300" y="18" text-anchor="middle" font-size="10" font-weight="600" fill="#78350f">batch 1000</text>
 
-      <line x1="428" y1="13" x2="452" y2="13" stroke="#d97706" stroke-width="1.5" marker-end="url(#arrAmber)"/>
+        <line x1="350" y1="14" x2="372" y2="14" stroke="#d97706" stroke-width="1.5" marker-end="url(#arrAmber)"/>
 
-      <rect x="458" y="0" width="130" height="26" rx="13" fill="#fef3c7" stroke="#fbbf24" stroke-width="1"/>
-      <text x="523" y="17" text-anchor="middle" font-size="10" font-weight="600" fill="#78350f">flush 500ms</text>
+        <rect x="378" y="0" width="88" height="28" rx="14" fill="#fef3c7" stroke="#fbbf24" stroke-width="1.2"/>
+        <text x="422" y="18" text-anchor="middle" font-size="10" font-weight="600" fill="#78350f">flush 500ms</text>
 
-      <line x1="594" y1="13" x2="618" y2="13" stroke="#d97706" stroke-width="1.5" marker-end="url(#arrAmber)"/>
+        <line x1="472" y1="14" x2="494" y2="14" stroke="#10b981" stroke-width="1.5" marker-end="url(#arrGreen)"/>
 
-      <rect x="624" y="0" width="140" height="26" rx="13" fill="#dcfce7" stroke="#86efac" stroke-width="1"/>
-      <text x="694" y="17" text-anchor="middle" font-size="10" font-weight="600" fill="#166534">INSERT → CH</text>
+        <rect x="500" y="0" width="100" height="28" rx="14" fill="#dcfce7" stroke="#86efac" stroke-width="1.2"/>
+        <text x="550" y="18" text-anchor="middle" font-size="10" font-weight="600" fill="#166534">INSERT → CH</text>
 
-      <line x1="770" y1="13" x2="794" y2="13" stroke="#10b981" stroke-width="1.5" marker-end="url(#arrGreen)"/>
+        <line x1="606" y1="14" x2="628" y2="14" stroke="#10b981" stroke-width="1.5" marker-end="url(#arrGreen)"/>
 
-      <rect x="800" y="0" width="140" height="26" rx="13" fill="#f0fdf4" stroke="#86efac" stroke-width="1"/>
-      <text x="870" y="17" text-anchor="middle" font-size="10" font-weight="600" fill="#166534">save position</text>
+        <rect x="634" y="0" width="80" height="28" rx="14" fill="#f0fdf4" stroke="#86efac" stroke-width="1.2"/>
+        <text x="674" y="18" text-anchor="middle" font-size="10" font-weight="600" fill="#166534">save pos</text>
+      </g>
+
+      <!-- Recovery note -->
+      <text x="20" y="92" font-size="10" fill="#94a3b8">crash → resume from saved timestamp · backpressure via max_pending_rows</text>
+    </g>
+
+    <!-- ─── Output routing boxes ─── -->
+    <g transform="translate(24, 400)">
+      <rect x="0" y="0" width="355" height="52" rx="8" fill="#ecfdf5" stroke="#86efac" stroke-width="1.5"/>
+      <text x="177" y="20" text-anchor="middle" font-size="11" font-weight="700" fill="#065f46">OUTPUT → ClickHouse</text>
+      <text x="177" y="40" text-anchor="middle" font-size="10" fill="#6b7280">analytics queries routed here (27x faster)</text>
+    </g>
+    <g transform="translate(400, 400)">
+      <rect x="0" y="0" width="355" height="52" rx="8" fill="#eef2ff" stroke="#a5b4fc" stroke-width="1.5"/>
+      <text x="177" y="20" text-anchor="middle" font-size="11" font-weight="700" fill="#3730a3">OUTPUT → MongoDB Secondary</text>
+      <text x="177" y="40" text-anchor="middle" font-size="10" fill="#6b7280">point lookups forwarded unchanged (0% overhead)</text>
     </g>
   </g>
 
-  <!-- ═══════════════════════════════════════ -->
-  <!-- Metrics strip at very bottom -->
-  <!-- ═══════════════════════════════════════ -->
-  <g transform="translate(250, 740)">
-    <rect x="0" y="0" width="140" height="40" rx="8" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="1"/>
-    <text x="70" y="18" text-anchor="middle" font-size="14" font-weight="800" fill="#059669">27x</text>
-    <text x="70" y="33" text-anchor="middle" font-size="9" fill="#6b7280">avg read speedup</text>
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!-- ARROWS BETWEEN BOXES (no overlaps) -->
+  <!-- ═══════════════════════════════════════════════════════ -->
 
-    <rect x="160" y="0" width="140" height="40" rx="8" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="1"/>
-    <text x="230" y="18" text-anchor="middle" font-size="14" font-weight="800" fill="#059669">53x</text>
-    <text x="230" y="33" text-anchor="middle" font-size="9" fill="#6b7280">peak speedup</text>
+  <!-- Oplog tail: MongoDB Primary → MongoFlux Sync -->
+  <!-- Goes from right side of MongoDB box, curves down and right into engine -->
+  <path d="M 580 360 L 620 360 Q 635 360 635 375 L 635 500 Q 635 515 650 515 L 680 515" stroke="#d97706" stroke-width="2.5" stroke-dasharray="7,5" fill="none" marker-end="url(#arrAmber)"/>
+  <rect x="610" y="430" width="72" height="20" rx="5" fill="#fffbeb" stroke="#fde68a" stroke-width="1"/>
+  <text x="646" y="444" text-anchor="middle" font-size="9" font-weight="600" fill="#d97706">oplog tail</text>
 
-    <rect x="320" y="0" width="140" height="40" rx="8" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="1"/>
-    <text x="390" y="18" text-anchor="middle" font-size="14" font-weight="800" fill="#059669">&lt;1s</text>
-    <text x="390" y="33" text-anchor="middle" font-size="9" fill="#6b7280">replication lag</text>
+  <!-- Forward to Secondary: MongoFlux → MongoDB Secondary -->
+  <!-- Goes from left side of engine, curves left into MongoDB box -->
+  <path d="M 660 660 L 620 660 Q 605 660 605 645 L 605 545 Q 605 530 590 530 L 530 530" stroke="#6366f1" stroke-width="2" stroke-dasharray="5,4" fill="none" marker-end="url(#arrIndigo)"/>
+  <rect x="590" y="580" width="60" height="18" rx="5" fill="#eef2ff" stroke="#c7d2fe" stroke-width="1"/>
+  <text x="620" y="593" text-anchor="middle" font-size="9" font-weight="600" fill="#4338ca">forward</text>
 
-    <rect x="480" y="0" width="140" height="40" rx="8" fill="#eef2ff" stroke="#c7d2fe" stroke-width="1"/>
-    <text x="550" y="18" text-anchor="middle" font-size="14" font-weight="800" fill="#4f46e5">0%</text>
-    <text x="550" y="33" text-anchor="middle" font-size="9" fill="#6b7280">write overhead</text>
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!-- BOTTOM: ClickHouse destination -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+
+  <!-- Arrow: Engine output → ClickHouse -->
+  <path d="M 1050 725 L 1050 770" stroke="#10b981" stroke-width="2.5" fill="none" marker-end="url(#arrGreen)"/>
+  <text x="1070" y="755" font-size="9" font-weight="600" fill="#059669">SQL</text>
+
+  <!-- ClickHouse card -->
+  <g transform="translate(930, 780)">
+    <rect x="0" y="0" width="240" height="110" rx="14" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="2.5" filter="url(#glowGreen)"/>
+    <text x="120" y="28" text-anchor="middle" font-size="11" fill="#065f46" font-weight="500">Columnar Analytics</text>
+    <text x="120" y="52" text-anchor="middle" font-size="18" font-weight="800" fill="#065f46">ClickHouse</text>
+    <text x="120" y="82" text-anchor="middle" font-size="28" font-weight="800" fill="#059669">27x</text>
+    <text x="120" y="100" text-anchor="middle" font-size="11" fill="#6b7280">faster aggregations</text>
   </g>
 
-  <!-- Source reference -->
-  <text x="600" y="795" text-anchor="middle" font-size="10" fill="#cbd5e1">cmd/mongoflux · internal/routing · internal/schema · internal/translator · internal/sync · internal/clickhouse</text>
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!-- Metrics bar -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <g transform="translate(150, 920)">
+    <rect x="0" y="0" width="1200" height="40" rx="20" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
+    <text x="120" y="25" text-anchor="middle" font-size="12" font-weight="700" fill="#059669">27x avg speedup</text>
+    <line x1="250" y1="8" x2="250" y2="32" stroke="#e2e8f0" stroke-width="1"/>
+    <text x="370" y="25" text-anchor="middle" font-size="12" font-weight="700" fill="#059669">53x peak</text>
+    <line x1="470" y1="8" x2="470" y2="32" stroke="#e2e8f0" stroke-width="1"/>
+    <text x="590" y="25" text-anchor="middle" font-size="12" font-weight="700" fill="#059669">&lt;1s replication lag</text>
+    <line x1="730" y1="8" x2="730" y2="32" stroke="#e2e8f0" stroke-width="1"/>
+    <text x="860" y="25" text-anchor="middle" font-size="12" font-weight="700" fill="#4f46e5">0% write overhead</text>
+    <line x1="1000" y1="8" x2="1000" y2="32" stroke="#e2e8f0" stroke-width="1"/>
+    <text x="1100" y="25" text-anchor="middle" font-size="11" fill="#94a3b8">at-least-once delivery</text>
+  </g>
+
+  <!-- Source files -->
+  <text x="750" y="980" text-anchor="middle" font-size="10" fill="#cbd5e1">internal/routing · internal/schema · internal/translator · internal/sync · internal/clickhouse</text>
 </svg>
