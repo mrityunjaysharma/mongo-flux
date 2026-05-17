@@ -1,0 +1,48 @@
+<svg viewBox="0 0 740 400" xmlns="http://www.w3.org/2000/svg" font-family="'Inter', -apple-system, sans-serif">
+  <defs>
+    <marker id="a1" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#6b7280"/></marker>
+    <marker id="a2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#16a34a"/></marker>
+    <marker id="a3" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#d97706"/></marker>
+  </defs>
+  <rect width="740" height="400" fill="#fafafa" rx="10" stroke="#e5e7eb" stroke-width="1"/>
+  <rect x="290" y="20" width="160" height="44" rx="22" fill="#111827"/>
+  <text x="370" y="47" text-anchor="middle" font-size="13" font-weight="600" fill="#fff">Your App</text>
+  <path d="M 330 64 L 200 110" stroke="#6b7280" stroke-width="2" fill="none" marker-end="url(#a1)"/>
+  <text x="240" y="82" font-size="10" fill="#dc2626" font-weight="600">writes</text>
+  <path d="M 410 64 L 540 110" stroke="#6b7280" stroke-width="2" fill="none" marker-end="url(#a1)"/>
+  <text x="470" y="82" font-size="10" fill="#2563eb" font-weight="600">reads</text>
+  <rect x="100" y="115" width="180" height="55" rx="10" fill="#fff" stroke="#d1d5db" stroke-width="1.5"/>
+  <circle cx="125" cy="135" r="6" fill="#16a34a"/>
+  <text x="140" y="138" font-size="11" fill="#6b7280">MongoDB</text>
+  <text x="140" y="155" font-size="14" font-weight="700" fill="#111827">Primary</text>
+  <rect x="440" y="115" width="200" height="55" rx="10" fill="#fff" stroke="#8b5cf6" stroke-width="2"/>
+  <text x="540" y="138" text-anchor="middle" font-size="11" fill="#7c3aed" font-weight="600">MONGOFLUX</text>
+  <text x="540" y="155" text-anchor="middle" font-size="11" fill="#6b7280">Query Router</text>
+  <rect x="60" y="210" width="120" height="40" rx="8" fill="#f8fafc" stroke="#d1d5db" stroke-width="1"/>
+  <text x="120" y="235" text-anchor="middle" font-size="10" fill="#374151">Secondary 1</text>
+  <rect x="200" y="210" width="120" height="40" rx="8" fill="#f8fafc" stroke="#d1d5db" stroke-width="1"/>
+  <text x="260" y="235" text-anchor="middle" font-size="10" fill="#374151">Secondary 2</text>
+  <path d="M 160 170 L 120 210" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#a1)"/>
+  <path d="M 220 170 L 260 210" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#a1)"/>
+  <rect x="460" y="280" width="180" height="55" rx="10" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="2"/>
+  <text x="550" y="303" text-anchor="middle" font-size="11" fill="#065f46" font-weight="500">ClickHouse</text>
+  <text x="550" y="322" text-anchor="middle" font-size="18" font-weight="800" fill="#059669">136x</text>
+  <path d="M 540 170 L 540 280" stroke="#16a34a" stroke-width="2" fill="none" marker-end="url(#a2)"/>
+  <rect x="548" y="215" width="90" height="18" rx="4" fill="#ecfdf5"/>
+  <text x="593" y="228" text-anchor="middle" font-size="9" font-weight="600" fill="#166534">?clickhouse=true</text>
+  <path d="M 440 155 L 320 230" stroke="#6366f1" stroke-width="1.5" stroke-dasharray="5,4" fill="none" marker-end="url(#a1)"/>
+  <text x="360" y="200" font-size="9" fill="#4338ca" font-weight="600">no param → forward</text>
+  <path d="M 280 155 L 370 360 L 460 320" stroke="#d97706" stroke-width="2" stroke-dasharray="6,4" fill="none" marker-end="url(#a3)"/>
+  <rect x="290" y="290" width="70" height="18" rx="4" fill="#fffbeb" stroke="#fde68a" stroke-width="1"/>
+  <text x="325" y="303" text-anchor="middle" font-size="9" font-weight="600" fill="#d97706">oplog tail</text>
+  <g transform="translate(30, 360)">
+    <line x1="0" y1="8" x2="20" y2="8" stroke="#6b7280" stroke-width="2"/>
+    <text x="26" y="12" font-size="9" fill="#6b7280">sync flow</text>
+    <line x1="100" y1="8" x2="120" y2="8" stroke="#d97706" stroke-width="2" stroke-dasharray="5,3"/>
+    <text x="126" y="12" font-size="9" fill="#d97706">async oplog</text>
+    <line x1="220" y1="8" x2="240" y2="8" stroke="#16a34a" stroke-width="2"/>
+    <text x="246" y="12" font-size="9" fill="#16a34a">analytics path</text>
+    <line x1="340" y1="8" x2="360" y2="8" stroke="#6366f1" stroke-width="1.5" stroke-dasharray="4,3"/>
+    <text x="366" y="12" font-size="9" fill="#4338ca">passthrough</text>
+  </g>
+</svg>

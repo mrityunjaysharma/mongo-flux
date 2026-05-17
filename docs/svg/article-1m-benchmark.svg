@@ -1,0 +1,46 @@
+<svg viewBox="0 0 740 320" xmlns="http://www.w3.org/2000/svg" font-family="'Inter', -apple-system, sans-serif">
+  <rect width="740" height="320" fill="#fff" rx="8" stroke="#e5e7eb" stroke-width="1"/>
+  <rect x="0" y="0" width="740" height="40" rx="8" fill="#111827"/>
+  <rect x="0" y="20" width="740" height="20" fill="#111827"/>
+  <text x="30" y="26" font-size="12" font-weight="600" fill="#fff">Query</text>
+  <text x="340" y="26" font-size="12" font-weight="600" fill="#fff">MongoDB</text>
+  <text x="470" y="26" font-size="12" font-weight="600" fill="#fff">ClickHouse</text>
+  <text x="620" y="26" font-size="12" font-weight="600" fill="#fff">Speedup</text>
+  <text x="30" y="68" font-size="12" fill="#374151">Date range scan (3 months)</text>
+  <text x="340" y="68" font-size="12" fill="#dc2626">2,069 ms</text>
+  <text x="470" y="68" font-size="12" fill="#166534" font-weight="600">7.0 ms</text>
+  <rect x="610" y="55" width="60" height="22" rx="11" fill="#dcfce7"/>
+  <text x="640" y="70" text-anchor="middle" font-size="11" font-weight="700" fill="#166534">294x</text>
+  <line x1="20" y1="82" x2="720" y2="82" stroke="#f3f4f6" stroke-width="1"/>
+  <text x="30" y="108" font-size="12" fill="#374151">Count by status (GROUP BY)</text>
+  <text x="340" y="108" font-size="12" fill="#dc2626">547 ms</text>
+  <text x="470" y="108" font-size="12" fill="#166534" font-weight="600">5.1 ms</text>
+  <rect x="610" y="95" width="60" height="22" rx="11" fill="#dcfce7"/>
+  <text x="640" y="110" text-anchor="middle" font-size="11" font-weight="700" fill="#166534">108x</text>
+  <line x1="20" y1="122" x2="720" y2="122" stroke="#f3f4f6" stroke-width="1"/>
+  <text x="30" y="148" font-size="12" fill="#374151">Avg amount by region</text>
+  <text x="340" y="148" font-size="12" fill="#dc2626">873 ms</text>
+  <text x="470" y="148" font-size="12" fill="#166534" font-weight="600">8.4 ms</text>
+  <rect x="610" y="135" width="60" height="22" rx="11" fill="#dcfce7"/>
+  <text x="640" y="150" text-anchor="middle" font-size="11" font-weight="700" fill="#166534">104x</text>
+  <line x1="20" y1="162" x2="720" y2="162" stroke="#f3f4f6" stroke-width="1"/>
+  <text x="30" y="188" font-size="12" fill="#374151">Top 10 by spend</text>
+  <text x="340" y="188" font-size="12" fill="#dc2626">1,184 ms</text>
+  <text x="470" y="188" font-size="12" fill="#166534" font-weight="600">12.6 ms</text>
+  <rect x="610" y="175" width="60" height="22" rx="11" fill="#ecfdf5"/>
+  <text x="640" y="190" text-anchor="middle" font-size="11" font-weight="700" fill="#166534">94x</text>
+  <line x1="20" y1="202" x2="720" y2="202" stroke="#f3f4f6" stroke-width="1"/>
+  <text x="30" y="228" font-size="12" fill="#374151">Full count</text>
+  <text x="340" y="228" font-size="12" fill="#dc2626">257 ms</text>
+  <text x="470" y="228" font-size="12" fill="#166534" font-weight="600">3.0 ms</text>
+  <rect x="610" y="215" width="60" height="22" rx="11" fill="#ecfdf5"/>
+  <text x="640" y="230" text-anchor="middle" font-size="11" font-weight="700" fill="#166534">87x</text>
+  <line x1="20" y1="242" x2="720" y2="242" stroke="#f3f4f6" stroke-width="1"/>
+  <text x="30" y="268" font-size="12" fill="#374151">2D GROUP BY (category × region)</text>
+  <text x="340" y="268" font-size="12" fill="#dc2626">691 ms</text>
+  <text x="470" y="268" font-size="12" fill="#166534" font-weight="600">10.1 ms</text>
+  <rect x="610" y="255" width="60" height="22" rx="11" fill="#f0fdf4"/>
+  <text x="640" y="270" text-anchor="middle" font-size="11" font-weight="700" fill="#166534">68x</text>
+  <rect x="20" y="290" width="700" height="26" rx="4" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="1"/>
+  <text x="370" y="308" text-anchor="middle" font-size="12" font-weight="700" fill="#166534">Average: 126x faster at 1M documents | Peak: 294x</text>
+</svg>

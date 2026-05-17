@@ -1,0 +1,19 @@
+<svg viewBox="0 0 740 120" xmlns="http://www.w3.org/2000/svg" font-family="'Inter', -apple-system, sans-serif">
+  <rect width="740" height="120" fill="#fff" rx="8" stroke="#e5e7eb" stroke-width="1"/>
+  <rect x="0" y="0" width="740" height="40" rx="8" fill="#111827"/>
+  <rect x="0" y="20" width="740" height="20" fill="#111827"/>
+  <text x="40" y="26" font-size="12" font-weight="600" fill="#fff">Metric</text>
+  <text x="300" y="26" font-size="12" font-weight="600" fill="#fff">MongoDB alone</text>
+  <text x="500" y="26" font-size="12" font-weight="600" fill="#fff">With MongoFlux</text>
+  <text x="40" y="68" font-size="12" fill="#374151">Batch throughput</text>
+  <text x="300" y="68" font-size="12" fill="#374151">28,639 docs/s</text>
+  <text x="500" y="68" font-size="12" font-weight="600" fill="#166534">31,858 docs/s</text>
+  <rect x="650" y="55" width="70" height="22" rx="11" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="1"/>
+  <text x="685" y="70" text-anchor="middle" font-size="10" font-weight="700" fill="#166534">0% overhead</text>
+  <line x1="20" y1="82" x2="720" y2="82" stroke="#f3f4f6" stroke-width="1"/>
+  <text x="40" y="105" font-size="12" fill="#374151">Single insert P99</text>
+  <text x="300" y="105" font-size="12" fill="#374151">8.25 ms</text>
+  <text x="500" y="105" font-size="12" font-weight="600" fill="#166534">8.08 ms</text>
+  <rect x="650" y="92" width="70" height="22" rx="11" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="1"/>
+  <text x="685" y="107" text-anchor="middle" font-size="10" font-weight="700" fill="#166534">0% overhead</text>
+</svg>

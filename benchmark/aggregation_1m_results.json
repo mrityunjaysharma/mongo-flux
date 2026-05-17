@@ -1,0 +1,56 @@
+{
+  "avg_speedup": 86.7,
+  "peak_query": "Count by status",
+  "peak_speedup": 157.5,
+  "queries": [
+    {
+      "query": "Count by status",
+      "mongo_ms": 1068.1,
+      "clickhouse_ms": 6.8,
+      "speedup": 157.5
+    },
+    {
+      "query": "Full count",
+      "mongo_ms": 260.3,
+      "clickhouse_ms": 2.2,
+      "speedup": 120
+    },
+    {
+      "query": "Revenue by region",
+      "mongo_ms": 1014.2,
+      "clickhouse_ms": 9.6,
+      "speedup": 105.6
+    },
+    {
+      "query": "Avg by category",
+      "mongo_ms": 818.4,
+      "clickhouse_ms": 8.7,
+      "speedup": 93.9
+    },
+    {
+      "query": "Filter + group",
+      "mongo_ms": 412.5,
+      "clickhouse_ms": 5.7,
+      "speedup": 71.9
+    },
+    {
+      "query": "2D GROUP BY",
+      "mongo_ms": 720.3,
+      "clickhouse_ms": 11.9,
+      "speedup": 60.8
+    },
+    {
+      "query": "Min/Max/Avg score",
+      "mongo_ms": 707.4,
+      "clickhouse_ms": 16,
+      "speedup": 44.2
+    },
+    {
+      "query": "Top 10 spenders",
+      "mongo_ms": 2448,
+      "clickhouse_ms": 61.5,
+      "speedup": 39.8
+    }
+  ],
+  "records": 1000000
+}

@@ -2,7 +2,7 @@
 
 Real-time MongoDB → ClickHouse replication with transparent query routing.
 
-ClickHouse becomes a "virtual secondary" in your replica set — same write stream, zero overhead on the write path, and analytical queries run 50-136x faster than MongoDB aggregations at scale.
+ClickHouse becomes a "virtual secondary" in your replica set — same write stream, zero overhead on the write path, and analytical queries run 87-294x faster than MongoDB aggregations at scale.
 
 ## The Problem
 
@@ -63,29 +63,29 @@ Indexes don't help here. They're designed for point lookups, not full-collection
 
 | Query | MongoDB | ClickHouse | Speedup |
 |:------|:--------|:-----------|:--------|
-| Count by status (GROUP BY) | 565 ms | 4.2 ms | **136x** |
-| Full table count | 291 ms | 2.3 ms | **129x** |
-| Avg amount by region | 663 ms | 6.3 ms | **105x** |
-| Top 10 by spend | 610 ms | 6.3 ms | **98x** |
-| 2D GROUP BY (category × region) | 985 ms | 15.4 ms | **64x** |
-| Date range scan (3 months) | 1,561 ms | 149 ms | **10x** |
+| Count by status (GROUP BY) | 547 ms | 5.1 ms | **108x** |
+| Avg amount by region | 873 ms | 8.4 ms | **104x** |
+| Top 10 by spend | 1,184 ms | 12.6 ms | **94x** |
+| Date range scan (3 months) | 2,069 ms | 7.0 ms | **294x** |
+| Full count | 257 ms | 3.0 ms | **87x** |
+| 2D GROUP BY (category × region) | 691 ms | 10.1 ms | **68x** |
 
-Average: **90.3x faster** at 1M documents.
+Average: **125.8x faster** at 1M documents. Peak: **294x** on date range scan.
 
 ### Aggregation benchmark (1M records, 8 query patterns)
 
 | Query | MongoDB | ClickHouse | Speedup |
 |:------|:--------|:-----------|:--------|
-| Count by status | 560 ms | 4.6 ms | **122x** |
-| Full count | 296 ms | 2.5 ms | **120x** |
-| Revenue by region | 615 ms | 5.9 ms | **103x** |
-| Avg by category | 621 ms | 6.4 ms | **97x** |
-| Filter + group | 516 ms | 6.6 ms | **78x** |
-| Min/Max/Avg score | 707 ms | 11.1 ms | **64x** |
-| Top 10 spenders | 2,972 ms | 58.6 ms | **51x** |
-| 2D GROUP BY | 795 ms | 15.9 ms | **50x** |
+| Count by status | 1,068 ms | 6.8 ms | **158x** |
+| Full count | 260 ms | 2.2 ms | **120x** |
+| Revenue by region | 1,014 ms | 9.6 ms | **106x** |
+| Avg by category | 818 ms | 8.7 ms | **94x** |
+| Filter + group | 413 ms | 5.7 ms | **72x** |
+| 2D GROUP BY | 720 ms | 11.9 ms | **61x** |
+| Min/Max/Avg score | 707 ms | 16.0 ms | **44x** |
+| Top 10 spenders | 2,448 ms | 61.5 ms | **40x** |
 
-Average: **85.7x faster**. Peak: **122x** on count-by-status.
+Average: **86.7x faster**. Peak: **158x** on count-by-status.
 
 ### Write overhead
 

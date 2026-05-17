@@ -1,0 +1,42 @@
+{
+  "avg_speedup": 125.8,
+  "queries": [
+    {
+      "query": "Count by status",
+      "mongo_ms": 546.8,
+      "clickhouse_ms": 5.1,
+      "speedup": 107.5
+    },
+    {
+      "query": "Avg amount by region",
+      "mongo_ms": 872.6,
+      "clickhouse_ms": 8.4,
+      "speedup": 104.1
+    },
+    {
+      "query": "Top 10 by spend",
+      "mongo_ms": 1183.5,
+      "clickhouse_ms": 12.6,
+      "speedup": 94.1
+    },
+    {
+      "query": "Date range scan",
+      "mongo_ms": 2068.8,
+      "clickhouse_ms": 7,
+      "speedup": 293.7
+    },
+    {
+      "query": "Full count",
+      "mongo_ms": 257,
+      "clickhouse_ms": 3,
+      "speedup": 86.9
+    },
+    {
+      "query": "2D GROUP BY",
+      "mongo_ms": 691.2,
+      "clickhouse_ms": 10.1,
+      "speedup": 68.2
+    }
+  ],
+  "records": 1000000
+}
