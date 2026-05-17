@@ -233,6 +233,10 @@
 <img src="svg/article-architecture.svg" alt="MongoFlux architecture flow" style="width:100%; margin: 2rem 0;"/>
 <p class="img-caption">MongoFlux architecture — writes go to MongoDB, oplog syncs to ClickHouse async, reads route by parameter</p>
 
+<!-- Full architecture diagram -->
+<img src="architecture-diagram.svg" alt="MongoFlux full architecture — MongoDB Replica Set, MongoFlux Engine with Query Router, Schema Registry, Translator, and Oplog Sync" style="width:100%; margin: 2rem 0;"/>
+<p class="img-caption">MongoFlux Engine internals — read path (Router → Schema → Translator → ClickHouse) and async write path (Oplog Sync)</p>
+
 <h2>The Query Translator</h2>
 
 <p>This was the most interesting engineering challenge. MongoDB queries are expressed as BSON documents — nested, operator-heavy, with a completely different mental model than SQL. I needed to translate them faithfully.</p>
@@ -340,6 +344,13 @@ for cursor.Next(ctx) {
 <p class="img-caption">ClickHouse bars are invisible at this scale — that's the point. The green bars exist, they're just 3-12ms vs hundreds.</p>
 
 <p>The date range scan hit 294x — ClickHouse's columnar storage with date-based ordering makes time-range queries almost free compared to MongoDB's full-collection scan.</p>
+
+<h3>At 10M documents — the gap explodes</h3>
+
+<p>At 10M documents, MongoDB queries take 8-29 seconds. ClickHouse stays under 400ms. The speedup grows superlinearly because MongoDB's row-oriented scans scale linearly with data size, while ClickHouse's columnar compression keeps query times nearly flat.</p>
+
+<!-- 10M benchmark as SVG -->
+<img src="svg/article-10m-benchmark.svg" alt="Read performance at 10M documents — MongoDB vs ClickHouse" style="width:100%; margin: 1.5rem 0;"/>
 
 <h3>Write overhead: zero</h3>
 

@@ -72,6 +72,19 @@ Indexes don't help here. They're designed for point lookups, not full-collection
 
 Average: **125.8x faster** at 1M documents. Peak: **294x** on date range scan.
 
+### Read performance at 10M records
+
+| Query | MongoDB | ClickHouse | Speedup |
+|:------|:--------|:-----------|:--------|
+| Count by status (GROUP BY) | 28,899 ms | 75 ms | **385x** |
+| Full count | 7,633 ms | 31 ms | **246x** |
+| Top 10 by spend | 19,531 ms | 96 ms | **203x** |
+| Date range scan (3 months) | 17,846 ms | 149 ms | **120x** |
+| 2D GROUP BY (category × region) | 15,840 ms | 347 ms | **46x** |
+| Avg amount by region | 17,715 ms | 393 ms | **45x** |
+
+Average: **174x faster** at 10M documents. Peak: **385x** on count-by-status. MongoDB queries now take 8-29 seconds while ClickHouse stays under 400ms.
+
 ### Aggregation benchmark (1M records, 8 query patterns)
 
 | Query | MongoDB | ClickHouse | Speedup |
