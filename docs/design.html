@@ -89,6 +89,8 @@
 
 <p>MongoDB runs as a 3-node replica set. The application connects to MongoFlux for reads. If the URI contains <code>?clickhouse=true</code>, MongoFlux translates the query to SQL and sends it to ClickHouse. Otherwise it forwards to a MongoDB secondary unchanged. Writes go directly to the primary. MongoFlux tails the oplog asynchronously — making ClickHouse behave like a "virtual secondary."</p>
 
+<img src="architecture-diagram.svg" alt="MongoFlux pipeline architecture — funnel diagram showing how all MongoDB operations are filtered and routed to ClickHouse analytics or MongoDB secondary paths" style="max-width:100%; margin: 2rem 0;"/>
+
 <div class="mermaid">
 flowchart TD
     APP[Your Application]
