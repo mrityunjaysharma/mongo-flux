@@ -1,0 +1,14 @@
+# Environment variables (contains secrets)
+.env
+
+# Binary
+mongoflux
+
+# IDE
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

@@ -16,18 +16,16 @@ import (
 )
 
 func main() {
-	configPath := "/etc/mongoflux/mongoflux.yaml"
 	if len(os.Args) > 1 {
 		arg := os.Args[1]
 		if arg == "-h" || arg == "--help" {
-			fmt.Fprintf(os.Stderr, "Usage: %s [config_path]\n  config_path: Path to mongoflux.yaml (default: /etc/mongoflux/mongoflux.yaml)\n", os.Args[0])
+			fmt.Fprintf(os.Stderr, "Usage: %s\n  Configuration is loaded from environment variables (see .env.example)\n", os.Args[0])
 			os.Exit(0)
 		}
-		configPath = arg
 	}
 
-	// Load configuration
-	cfg, err := config.Load(configPath)
+	// Load configuration from environment variables
+	cfg, err := config.Load()
 	if err != nil {
 		slog.Error("Failed to load config", "error", err)
 		os.Exit(1)
