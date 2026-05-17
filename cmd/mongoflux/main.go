@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -29,24 +29,25 @@ func main() {
 	// Load configuration
 	cfg, err := config.Load(configPath)
 	if err != nil {
-		log.Fatalf("[mongoflux] Failed to load config: %v", err)
+		slog.Error("Failed to load config", "error", err)
+		os.Exit(1)
 	}
 
 	// Initialize schema registry
 	registry := schema.NewRegistry()
 	mappingsFile := filepath.Join(cfg.Sync.ResumeTokenPath, "mappings.json")
 	if err := registry.LoadFromFile(mappingsFile); err != nil {
-		log.Printf("[mongoflux] Warning: %v", err)
+		slog.Warn("Could not load mappings", "error", err)
 	} else {
-		log.Printf("[mongoflux] Loaded %d schema mappings", len(registry.GetAll()))
+		slog.Info("Loaded schema mappings", "count", len(registry.GetAll()))
 	}
 
 	// ClickHouse client
 	chClient := clickhouse.NewClient(cfg.ClickHouse)
 	if err := chClient.Ping(); err != nil {
-		log.Printf("[mongoflux] Warning: ClickHouse not reachable: %v", err)
+		slog.Warn("ClickHouse not reachable", "error", err)
 	} else {
-		log.Printf("[mongoflux] Connected to ClickHouse at %s:%d", cfg.ClickHouse.Host, cfg.ClickHouse.Port)
+		slog.Info("Connected to ClickHouse", "host", cfg.ClickHouse.Host, "port", cfg.ClickHouse.Port)
 	}
 
 	// Sync engines
@@ -58,17 +59,17 @@ func main() {
 
 	// Start sync based on configured mode
 	if cfg.Sync.Mode == "oplog" {
-		log.Println("[mongoflux] Starting oplog sync (direct tailing, like a secondary node)...")
+		slog.Info("Starting oplog sync")
 		oplogSync.Start()
 	} else {
-		log.Println("[mongoflux] Starting change stream sync...")
+		slog.Info("Starting change stream sync")
 		csSync.Start()
 	}
 
-	log.Printf("[mongoflux] Starting management API on port %d", cfg.API.Port)
+	slog.Info("Starting management API", "port", cfg.API.Port)
 	mgmtAPI.Start()
 
-	log.Println("[mongoflux] MongoFlux is running. Press Ctrl+C to stop.")
+	slog.Info("MongoFlux is running. Press Ctrl+C to stop.")
 
 	// Wait for shutdown signal
 	sigCh := make(chan os.Signal, 1)
@@ -76,15 +77,15 @@ func main() {
 	<-sigCh
 
 	// Graceful shutdown
-	log.Println("\n[mongoflux] Shutting down...")
+	slog.Info("Shutting down...")
 	mgmtAPI.Stop()
 	oplogSync.Stop()
 	csSync.Stop()
 
 	// Persist mappings
 	if err := registry.SaveToFile(mappingsFile); err != nil {
-		log.Printf("[mongoflux] Warning: Failed to save mappings: %v", err)
+		slog.Warn("Failed to save mappings", "error", err)
 	}
 
-	log.Println("[mongoflux] Shutdown complete.")
+	slog.Info("Shutdown complete.")
 }

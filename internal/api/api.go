@@ -3,7 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -74,9 +74,9 @@ func (a *ManagementAPI) Start() {
 	}
 
 	go func() {
-		log.Printf("[mongoflux] Management API listening on %s", addr)
+		slog.Info("Management API listening", "addr", addr)
 		if err := a.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Printf("[mongoflux] API server error: %v", err)
+			slog.Error("API server error", "error", err)
 		}
 	}()
 }

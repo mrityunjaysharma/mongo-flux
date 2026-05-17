@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -55,11 +55,11 @@ func (cs *ChangeStreamSync) Start() {
 		}
 		ddl, err := cs.registry.GenerateCreateTableSQL(m)
 		if err != nil {
-			log.Printf("[mongoflux/cs] Invalid mapping for %s: %v", m.Collection, err)
+			slog.Warn("Invalid mapping", "collection", m.Collection, "error", err)
 			continue
 		}
 		if err := cs.chClient.CreateTable(ddl); err != nil {
-			log.Printf("[mongoflux/cs] Failed to create table for %s: %v", m.Collection, err)
+			slog.Error("Failed to create table", "collection", m.Collection, "error", err)
 		}
 	}
 
@@ -120,7 +120,7 @@ func (cs *ChangeStreamSync) syncCollection(ctx context.Context, collection strin
 			if ctx.Err() != nil {
 				return // Shutdown requested
 			}
-			log.Printf("[mongoflux/cs] Stream failed for %s: %v. Retrying in 3s...", collection, err)
+			slog.Warn("Change stream failed, retrying", "collection", collection, "error", err, "retry_in", "3s")
 			select {
 			case <-ctx.Done():
 				return
@@ -212,8 +212,7 @@ func (cs *ChangeStreamSync) flushBatch(collection string, mapping *schema.Collec
 
 	columns, rows := prepareBatchForInsert(*batch, mapping)
 	if err := cs.chClient.InsertBatch(mapping.ClickHouseDatabase, mapping.ClickHouseTable, columns, rows); err != nil {
-		log.Printf("[mongoflux/cs] Failed to flush batch for %s (%d rows): %v",
-			collection, len(*batch), err)
+		slog.Error("Failed to flush batch", "collection", collection, "rows", len(*batch), "error", err)
 	}
 	*batch = (*batch)[:0]
 }
@@ -221,16 +220,16 @@ func (cs *ChangeStreamSync) flushBatch(collection string, mapping *schema.Collec
 func (cs *ChangeStreamSync) saveResumeToken(collection string, token interface{}) {
 	path := filepath.Join(cs.config.Sync.ResumeTokenPath, collection+".json")
 	if err := os.MkdirAll(cs.config.Sync.ResumeTokenPath, 0755); err != nil {
-		log.Printf("[mongoflux/cs] Failed to create resume token directory: %v", err)
+		slog.Error("Failed to create resume token directory", "error", err)
 		return
 	}
 	data, err := json.Marshal(token)
 	if err != nil {
-		log.Printf("[mongoflux/cs] Failed to marshal resume token for %s: %v", collection, err)
+		slog.Error("Failed to marshal resume token", "collection", collection, "error", err)
 		return
 	}
 	if err := os.WriteFile(path, data, 0644); err != nil {
-		log.Printf("[mongoflux/cs] Failed to persist resume token for %s: %v", collection, err)
+		slog.Error("Failed to persist resume token", "collection", collection, "error", err)
 	}
 }
 
@@ -242,7 +241,7 @@ func (cs *ChangeStreamSync) loadResumeToken(collection string) bson.Raw {
 	}
 	var token bson.Raw
 	if err := json.Unmarshal(data, &token); err != nil {
-		log.Printf("[mongoflux/cs] Corrupted resume token for %s, starting fresh", collection)
+		slog.Warn("Corrupted resume token, starting fresh", "collection", collection)
 		return nil
 	}
 	return token

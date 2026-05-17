@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -59,11 +59,11 @@ func (o *OplogSync) Start() {
 		}
 		ddl, err := o.registry.GenerateCreateTableSQL(m)
 		if err != nil {
-			log.Printf("[mongoflux/oplog] Invalid mapping for %s: %v", m.Collection, err)
+			slog.Warn("Invalid mapping", "collection", m.Collection, "error", err)
 			continue
 		}
 		if err := o.chClient.CreateTable(ddl); err != nil {
-			log.Printf("[mongoflux/oplog] Failed to create table for %s: %v", m.Collection, err)
+			slog.Error("Failed to create table", "collection", m.Collection, "error", err)
 		}
 	}
 
@@ -111,7 +111,7 @@ func (o *OplogSync) tailOplog(ctx context.Context) {
 			if ctx.Err() != nil {
 				return
 			}
-			log.Printf("[mongoflux/oplog] Connection failed: %v. Retrying in 3s...", err)
+			slog.Warn("Oplog connection failed, retrying", "error", err, "retry_in", "3s")
 			metrics.Instance().IncOplogReconnects()
 			metrics.Instance().SetSyncRunning(false)
 			select {
@@ -147,9 +147,9 @@ func (o *OplogSync) tailOplogInner(ctx context.Context) error {
 		if ts, ok := lastEntry["ts"].(primitive.Timestamp); ok {
 			startTS = ts
 		}
-		log.Printf("[mongoflux/oplog] Starting from oplog ts=%d:%d", startTS.T, startTS.I)
+		slog.Info("Starting from oplog tail", "ts", startTS.T, "inc", startTS.I)
 	} else {
-		log.Printf("[mongoflux/oplog] Resuming from saved oplog ts=%d:%d", startTS.T, startTS.I)
+		slog.Info("Resuming from saved position", "ts", startTS.T, "inc", startTS.I)
 	}
 
 	// Build tailable-await cursor
@@ -194,8 +194,7 @@ func (o *OplogSync) tailOplogInner(ctx context.Context) error {
 			columns, chRows := prepareBatchForInsert(batch.rows, mapping)
 			err := o.chClient.InsertBatch(mapping.ClickHouseDatabase, mapping.ClickHouseTable, columns, chRows)
 			if err != nil {
-				log.Printf("[mongoflux/oplog] Flush failed for %s (%d rows): %v",
-					collection, len(batch.rows), err)
+				slog.Error("Flush failed", "collection", collection, "rows", len(batch.rows), "error", err)
 				metrics.Instance().IncFlushFailure()
 				allFlushed = false
 			} else {
@@ -347,7 +346,7 @@ func (o *OplogSync) tailOplogInner(ctx context.Context) error {
 func (o *OplogSync) saveOplogTimestamp(ts primitive.Timestamp) {
 	path := filepath.Join(o.config.Sync.ResumeTokenPath, "oplog_position.json")
 	if err := os.MkdirAll(o.config.Sync.ResumeTokenPath, 0755); err != nil {
-		log.Printf("[mongoflux/oplog] Failed to create resume token directory: %v", err)
+		slog.Error("Failed to create resume token directory", "error", err)
 		return
 	}
 
@@ -356,12 +355,12 @@ func (o *OplogSync) saveOplogTimestamp(ts primitive.Timestamp) {
 		"increment": ts.I,
 	})
 	if err != nil {
-		log.Printf("[mongoflux/oplog] Failed to marshal oplog position: %v", err)
+		slog.Error("Failed to marshal oplog position", "error", err)
 		return
 	}
 
 	if err := os.WriteFile(path, data, 0644); err != nil {
-		log.Printf("[mongoflux/oplog] Failed to persist oplog position: %v", err)
+		slog.Error("Failed to persist oplog position", "error", err)
 	}
 }
 
